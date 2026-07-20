@@ -4,8 +4,162 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interactive Computer Graphics</title>
+    <style>
+        /* Google Font */
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
 
-    <link rel="stylesheet" href="style.css">
+        *{
+            margin:0;
+            padding:0;
+            box-sizing:border-box;
+            font-family:'Poppins',sans-serif;
+        }
+
+        body{
+            background:#0f172a;
+            color:white;
+            line-height:1.8;
+        }
+
+        /* Header */
+        header{
+            background:linear-gradient(135deg,#2563eb,#06b6d4);
+            text-align:center;
+            padding:70px 20px;
+        }
+
+        header h1{
+            font-size:48px;
+            margin-bottom:15px;
+        }
+
+        header p{
+            font-size:18px;
+            opacity:.9;
+        }
+
+        /* Sections */
+        section{
+            max-width:1000px;
+            margin:40px auto;
+            padding:0 20px;
+        }
+
+        section h2{
+            color:#38bdf8;
+            margin-bottom:20px;
+            border-left:5px solid #38bdf8;
+            padding-left:12px;
+        }
+
+        /* Card */
+        .card{
+            background:#1e293b;
+            padding:25px;
+            border-radius:15px;
+            box-shadow:0 10px 25px rgba(0,0,0,.3);
+        }
+
+        /* List */
+        ul{
+            padding-left:20px;
+        }
+
+        li{
+            margin:10px 0;
+        }
+
+        /* Table */
+        table{
+            width:100%;
+            border-collapse:collapse;
+            margin-top:20px;
+            background:#1e293b;
+            border-radius:10px;
+            overflow:hidden;
+        }
+
+        th{
+            background:#38bdf8;
+            color:#0f172a;
+            padding:15px;
+        }
+
+        td{
+            padding:15px;
+            border-bottom:1px solid #334155;
+            text-align: center;
+        }
+
+        tr:hover{
+            background:#334155;
+        }
+
+        /* iframe container สำหรับโชว์เคสงาน */
+        .iframe-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+            background: #0f172a;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        iframe {
+            width: 520px;
+            height: 520px;
+            border: none;
+            background: white; /* เพื่อให้พื้นหลัง canvas เป็นสีขาว */
+            border-radius: 5px;
+        }
+
+        /* Button */
+        .button{
+            display:inline-block;
+            margin-top:20px;
+            padding:15px 30px;
+            background:#38bdf8;
+            color:#0f172a;
+            text-decoration:none;
+            font-weight:bold;
+            border-radius:10px;
+            transition:.3s;
+        }
+
+        .button:hover{
+            background:white;
+            transform:translateY(-4px);
+        }
+
+        /* Footer */
+        footer{
+            margin-top:60px;
+            padding:30px;
+            text-align:center;
+            background:#020617;
+            color:#94a3b8;
+        }
+
+        /* Responsive */
+        @media(max-width:768px){
+            header h1{
+                font-size:32px;
+            }
+
+            table{
+                font-size:14px;
+            }
+
+            section{
+                padding:15px;
+            }
+            
+            iframe {
+                width: 100%;
+                height: 400px; /* ปรับขนาดให้เล็กลงบนมือถือ */
+            }
+        }
+    </style>
 </head>
 <body>
 
@@ -15,9 +169,7 @@
 </header>
 
 <section>
-
     <h2>Project Overview</h2>
-
     <div class="card">
         <p>
             This project demonstrates an interactive computer graphics
@@ -26,15 +178,11 @@
             transformations, and real-time keyboard and mouse interaction.
         </p>
     </div>
-
 </section>
 
 <section>
-
     <h2>Project Features</h2>
-
     <div class="card">
-
         <ul>
             <li>🎨 Pixel Drawing</li>
             <li>📏 Line Drawing</li>
@@ -49,118 +197,72 @@
             <li>🖱 Mouse Interaction</li>
             <li>🌼 24-bit Sprite Rendering</li>
         </ul>
-
     </div>
+</section>
 
+<!-- ส่วนที่เพิ่มใหม่: ดึงผลงานมาแสดง -->
+<section>
+    <h2>Live Demo Showcase</h2>
+    <div class="card" style="text-align: center;">
+        <p>
+            <strong>Interactive Controls:</strong><br>
+            - 🖱️ Click and drag to draw lines.<br>
+            - ⌨️ Use <strong>Arrow Keys (← → ↑ ↓)</strong> to rotate and scale the flower sprite.<br>
+            - ⌨️ Press <strong>1, 2, 3</strong> to change drawing color.
+        </p>
+        
+        <div class="iframe-container">
+            <!-- ดึงไฟล์โค้ดกราฟิกของคุณมาแสดงตรงนี้ (ต้องตั้งชื่อไฟล์ให้ตรงกัน) -->
+            <iframe src="800_interactional(4).html" title="Raster Graphics Showcase" scrolling="no"></iframe>
+        </div>
+        
+        <a class="button" href="800_interactional(4).html" target="_blank">
+            ▶ Open in Full Screen
+        </a>
+    </div>
 </section>
 
 <section>
-
     <h2>Keyboard Controls</h2>
-
     <table>
-
         <tr>
             <th>Key</th>
             <th>Action</th>
         </tr>
-
         <tr>
             <td>1</td>
             <td>Change Color to Red</td>
         </tr>
-
         <tr>
             <td>2</td>
             <td>Change Color to Green</td>
         </tr>
-
         <tr>
             <td>3</td>
             <td>Change Color to Blue</td>
         </tr>
-
         <tr>
             <td>←</td>
             <td>Rotate Left</td>
         </tr>
-
         <tr>
             <td>→</td>
             <td>Rotate Right</td>
         </tr>
-
         <tr>
             <td>↑</td>
             <td>Scale Up</td>
         </tr>
-
         <tr>
             <td>↓</td>
             <td>Scale Down</td>
         </tr>
-
     </table>
-
 </section>
 
 <section>
-
-    <h2>Mouse Interaction</h2>
-
-    <div class="card">
-
-        <ul>
-            <li>Click and drag to draw.</li>
-            <li>Move the mouse to interact with graphics.</li>
-            <li>Supports real-time interaction.</li>
-        </ul>
-
-    </div>
-
-</section>
-
-<section>
-
-    <h2>Technologies</h2>
-
-    <div class="card">
-
-        <ul>
-            <li>HTML5</li>
-            <li>CSS3</li>
-            <li>JavaScript (ES6)</li>
-            <li>HTML5 Canvas API</li>
-        </ul>
-
-    </div>
-
-</section>
-
-<section>
-
-    <h2>Live Demo</h2>
-
-    <div class="card">
-
-        <p>
-            Click the button below to launch the Interactive Computer Graphics project.
-        </p>
-
-        <a class="button" href="800_interactional(4).html">
-            ▶ Open Interactive Graphics
-        </a>
-
-    </div>
-
-</section>
-
-<section>
-
     <h2>Learning Outcomes</h2>
-
     <div class="card">
-
         <ul>
             <li>Implemented raster graphics algorithms.</li>
             <li>Applied Translation, Rotation, and Scaling transformations.</li>
@@ -168,16 +270,12 @@
             <li>Created a 24-bit sprite rendering system.</li>
             <li>Implemented keyboard and mouse interaction.</li>
         </ul>
-
     </div>
-
 </section>
 
 <footer>
-
     <p><strong>Interactive Computer Graphics Project</strong></p>
     <p>Developed using HTML5 Canvas & JavaScript</p>
-
 </footer>
 
 </body>
