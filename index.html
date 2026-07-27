@@ -8,91 +8,91 @@
         /* Google Font */
         @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
 
-        *{
-            margin:0;
-            padding:0;
-            box-sizing:border-box;
-            font-family:'Poppins',sans-serif;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
         }
 
-        body{
-            background:#0f172a;
-            color:white;
-            line-height:1.8;
+        body {
+            background: #0f172a;
+            color: white;
+            line-height: 1.8;
         }
 
         /* Header */
-        header{
-            background:linear-gradient(135deg,#2563eb,#06b6d4);
-            text-align:center;
-            padding:70px 20px;
+        header {
+            background: linear-gradient(135deg, #2563eb, #06b6d4);
+            text-align: center;
+            padding: 70px 20px;
         }
 
-        header h1{
-            font-size:48px;
-            margin-bottom:15px;
+        header h1 {
+            font-size: 48px;
+            margin-bottom: 15px;
         }
 
-        header p{
-            font-size:18px;
-            opacity:.9;
+        header p {
+            font-size: 18px;
+            opacity: .9;
         }
 
         /* Sections */
-        section{
-            max-width:1000px;
-            margin:40px auto;
-            padding:0 20px;
+        section {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 20px;
         }
 
-        section h2{
-            color:#38bdf8;
-            margin-bottom:20px;
-            border-left:5px solid #38bdf8;
-            padding-left:12px;
+        section h2 {
+            color: #38bdf8;
+            margin-bottom: 20px;
+            border-left: 5px solid #38bdf8;
+            padding-left: 12px;
         }
 
         /* Card */
-        .card{
-            background:#1e293b;
-            padding:25px;
-            border-radius:15px;
-            box-shadow:0 10px 25px rgba(0,0,0,.3);
+        .card {
+            background: #1e293b;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,.3);
         }
 
         /* List */
-        ul{
-            padding-left:20px;
+        ul {
+            padding-left: 20px;
         }
 
-        li{
-            margin:10px 0;
+        li {
+            margin: 10px 0;
         }
 
         /* Table */
-        table{
-            width:100%;
-            border-collapse:collapse;
-            margin-top:20px;
-            background:#1e293b;
-            border-radius:10px;
-            overflow:hidden;
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: #1e293b;
+            border-radius: 10px;
+            overflow: hidden;
         }
 
-        th{
-            background:#38bdf8;
-            color:#0f172a;
-            padding:15px;
+        th {
+            background: #38bdf8;
+            color: #0f172a;
+            padding: 15px;
         }
 
-        td{
-            padding:15px;
-            border-bottom:1px solid #334155;
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #334155;
             text-align: center;
         }
 
-        tr:hover{
-            background:#334155;
+        tr:hover {
+            background: #334155;
         }
 
         /* iframe container สำหรับโชว์เคสงาน */
@@ -106,57 +106,76 @@
         }
 
         iframe {
-            width: 520px;
-            height: 520px;
+            width: 100%;
             border: none;
-            background: white; /* เพื่อให้พื้นหลัง canvas เป็นสีขาว */
             border-radius: 5px;
         }
 
-        /* Button */
-        .button{
-            display:inline-block;
-            margin-top:20px;
-            padding:15px 30px;
-            background:#38bdf8;
-            color:#0f172a;
-            text-decoration:none;
-            font-weight:bold;
-            border-radius:10px;
-            transition:.3s;
+        /* iframe สเปกเฉพาะสำหรับ Raster Demo */
+        .raster-iframe {
+            width: 520px;
+            height: 520px;
+            background: white;
         }
 
-        .button:hover{
-            background:white;
-            transform:translateY(-4px);
+        /* iframe สเปกเฉพาะสำหรับ Paint App */
+        .paint-iframe {
+            max-width: 850px;
+            height: 600px;
+            border: 2px solid #334155;
+            border-radius: 10px;
+            background: #f0f0f0;
+        }
+
+        /* Button */
+        .button {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 15px 30px;
+            background: #38bdf8;
+            color: #0f172a;
+            text-decoration: none;
+            font-weight: bold;
+            border-radius: 10px;
+            transition: .3s;
+        }
+
+        .button:hover {
+            background: white;
+            transform: translateY(-4px);
         }
 
         /* Footer */
-        footer{
-            margin-top:60px;
-            padding:30px;
-            text-align:center;
-            background:#020617;
-            color:#94a3b8;
+        footer {
+            margin-top: 60px;
+            padding: 30px;
+            text-align: center;
+            background: #020617;
+            color: #94a3b8;
         }
 
         /* Responsive */
-        @media(max-width:768px){
-            header h1{
-                font-size:32px;
+        @media(max-width: 768px) {
+            header h1 {
+                font-size: 32px;
             }
 
-            table{
-                font-size:14px;
+            table {
+                font-size: 14px;
             }
 
-            section{
-                padding:15px;
+            section {
+                padding: 15px;
             }
             
-            iframe {
+            .raster-iframe {
                 width: 100%;
-                height: 400px; /* ปรับขนาดให้เล็กลงบนมือถือ */
+                height: 400px;
+            }
+
+            .paint-iframe {
+                width: 100%;
+                height: 500px;
             }
         }
     </style>
@@ -200,7 +219,7 @@
     </div>
 </section>
 
-<!-- ส่วนที่แก้ไขแล้ว: ดึงผลงานมาแสดง -->
+<!-- ส่วนแสดงผล Raster Graphics Showcase -->
 <section>
     <h2>Live Demo Showcase</h2>
     <div class="card" style="text-align: center;">
@@ -212,8 +231,7 @@
         </p>
         
         <div class="iframe-container">
-            <!-- แก้ชื่อไฟล์ตรงนี้ให้ตรงกับใน GitHub แล้ว -->
-            <iframe src="800_interactional_3.html" title="Raster Graphics Showcase" scrolling="no"></iframe>
+            <iframe class="raster-iframe" src="800_interactional_3.html" title="Raster Graphics Showcase" scrolling="no"></iframe>
         </div>
         
         <a class="button" href="800_interactional_3.html" target="_blank">
@@ -270,6 +288,27 @@
             <li>Created a 24-bit sprite rendering system.</li>
             <li>Implemented keyboard and mouse interaction.</li>
         </ul>
+    </div>
+</section>
+
+<!-- ส่วนที่เพิ่มใหม่: แสดงผล Paint Application -->
+<section>
+    <h2>My Paint Application</h2>
+    <div class="card" style="text-align: center;">
+        <p>
+            <strong>Interactive Tools:</strong><br>
+            - ✏️ วาดรูปอิสระด้วยดินสอ หรือสร้างรูปทรงเรขาคณิต (เส้นตรง, สี่เหลี่ยม, วงรี)<br>
+            - 🎨 ปรับเปลี่ยนสีและความหนาของเส้นได้ตามต้องการ<br>
+            - 🩹 มียางลบสี่เหลี่ยมสำหรับแก้ไขจุดที่ผิดพลาด
+        </p>
+        
+        <div class="iframe-container" style="background: transparent; padding: 10px 0;">
+            <iframe class="paint-iframe" src="paint.html" title="My Paint App"></iframe>
+        </div>
+        
+        <a class="button" href="paint.html" target="_blank">
+            ▶ Open Paint App in Full Screen
+        </a>
     </div>
 </section>
 
