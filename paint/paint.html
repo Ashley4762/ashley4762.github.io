@@ -1,1 +1,208 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>My Paint App</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        #toolbar {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #ddd;
+            border-radius: 5px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        button.active {
+            background-color: #4CAF50;
+            color: white;
+            border: 1px solid #333;
+        }
+        canvas {
+            background-color: #ffffff;
+            border: 2px solid #000;
+            /* ตั้งค่าเริ่มต้นให้เป็นรูปดินสอ */
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><text x="0" y="20" font-size="20">✏️</text></svg>') 0 20, auto;
+        }
+        .tool-group {
+            border-right: 2px solid #bbb;
+            padding-right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+        
+        /* กรอบยางลบสี่เหลี่ยม */
+        #eraserCursor {
+            position: absolute;
+            border: 1px solid black;
+            background-color: white;
+            pointer-events: none; /* คลิกทะลุได้ */
+            display: none; /* ซ่อนไว้ก่อน */
+            transform: translate(-50%, -50%); /* ให้อยู่กึ่งกลางเมาส์พอดี */
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
 
+    <div id="toolbar">
+        <div class="tool-group">
+            <button id="pencilBtn" class="active" onclick="setTool('pencil')">✏️ ดินสอ</button>
+            <button id="lineBtn" onclick="setTool('line')">📏 เส้นตรง</button>
+            <button id="rectBtn" onclick="setTool('rect')">⬜ สี่เหลี่ยม</button>
+            <button id="ellipseBtn" onclick="setTool('ellipse')">⭕ วงรี</button>
+            <button id="eraserBtn" onclick="setTool('eraser')">🩹 ยางลบ</button>
+        </div>
+        
+        <div class="tool-group">
+            <label for="colorPicker">สี:</label>
+            <input type="color" id="colorPicker" value="#000000">
+        </div>
+
+        <div class="tool-group">
+            <label for="weightPicker">ความหนา:</label>
+            <input type="range" id="weightPicker" min="1" max="50" value="5">
+        </div>
+    </div>
+
+    <!-- กล่องสี่เหลี่ยมสำหรับจำลองยางลบ -->
+    <div id="eraserCursor"></div>
+
+    <canvas id="canvas" width="800" height="500"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const eraserCursor = document.getElementById('eraserCursor');
+        
+        let isDrawing = false;
+        let tool = "pencil"; 
+        let startX, startY;
+        let snapshot; 
+
+        // สร้างไอคอนเมาส์ดินสอด้วย SVG
+        const pencilCursorStyle = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><text x="0" y="20" font-size="20">✏️</text></svg>') 0 20, auto`;
+
+        // เติมพื้นหลังแคนวาสเป็นสีขาว
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // ฟังก์ชันสลับเครื่องมือ
+        function setTool(selectedTool) {
+            tool = selectedTool;
+            
+            // เปลี่ยนสีปุ่ม
+            document.querySelectorAll('#toolbar button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(selectedTool + 'Btn').classList.add('active');
+            
+            // อัปเดตรูปแบบเมาส์ (Cursor)
+            if (tool === 'eraser') {
+                canvas.style.cursor = 'none'; // ซ่อนเมาส์สำหรับยางลบ
+                eraserCursor.style.display = 'block'; // แสดงกรอบสี่เหลี่ยม
+            } else if (tool === 'pencil') {
+                canvas.style.cursor = pencilCursorStyle; // เมาส์รูปดินสอ
+                eraserCursor.style.display = 'none';
+            } else {
+                canvas.style.cursor = 'crosshair'; // เป้ากากบาทสำหรับวาดรูปทรง
+                eraserCursor.style.display = 'none';
+            }
+        }
+
+        // เริ่มวาด
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            startX = e.offsetX;
+            startY = e.offsetY;
+            
+            snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+        });
+
+        // ระหว่างขยับเมาส์
+        canvas.addEventListener('mousemove', (e) => {
+            const weight = document.getElementById('weightPicker').value;
+
+            // ควบคุมกรอบยางลบให้วิ่งตามเมาส์
+            if (tool === 'eraser') {
+                eraserCursor.style.width = weight + 'px';
+                eraserCursor.style.height = weight + 'px';
+                eraserCursor.style.left = e.pageX + 'px';
+                eraserCursor.style.top = e.pageY + 'px';
+            }
+
+            if (!isDrawing) return;
+
+            const currentX = e.offsetX;
+            const currentY = e.offsetY;
+
+            // คืนค่าภาพเดิมถ้ากำลังลากวาดรูปทรงเรขาคณิต (เพื่อสร้าง Preview)
+            if (tool !== 'pencil' && tool !== 'eraser') {
+                ctx.putImageData(snapshot, 0, 0);
+                ctx.beginPath(); 
+            }
+
+            ctx.lineWidth = weight;
+            ctx.lineCap = tool === 'eraser' ? "square" : "round"; // ยางลบหัวตัดรูปสี่เหลี่ยม, ดินสอหัวมน
+            ctx.strokeStyle = tool === 'eraser' ? "#ffffff" : document.getElementById('colorPicker').value;
+
+            // ตรรกะการวาด
+            if (tool === 'pencil' || tool === 'eraser') {
+                ctx.lineTo(currentX, currentY);
+                ctx.stroke();
+            } 
+            else if (tool === 'line') {
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(currentX, currentY);
+                ctx.stroke();
+            } 
+            else if (tool === 'rect') {
+                const width = currentX - startX;
+                const height = currentY - startY;
+                ctx.strokeRect(startX, startY, width, height);
+            } 
+            else if (tool === 'ellipse') {
+                const radiusX = Math.abs(currentX - startX) / 2;
+                const radiusY = Math.abs(currentY - startY) / 2;
+                const centerX = startX + (currentX - startX) / 2;
+                const centerY = startY + (currentY - startY) / 2;
+                
+                ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        });
+
+        const stopDrawing = () => {
+            if (isDrawing) {
+                isDrawing = false;
+                ctx.closePath();
+            }
+        };
+
+        // เมื่อปล่อยเมาส์
+        canvas.addEventListener('mouseup', stopDrawing);
+        
+        // จัดการซ่อน/แสดง กรอบยางลบเมื่อเมาส์เข้าออก Canvas
+        canvas.addEventListener('mouseout', () => {
+            eraserCursor.style.display = 'none';
+            stopDrawing();
+        });
+
+        canvas.addEventListener('mouseenter', () => {
+            if (tool === 'eraser') {
+                eraserCursor.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
