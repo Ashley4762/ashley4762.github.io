@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Next Gen Rendering — Berry Cake (PBR)</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=IBM+Plex+Sans+Thai:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --plum:#241329;        /* สีพื้นหลังม่วงเข้ม */
+    --lilac:#c9a8e3;       /* สีม่วงของหน้าเค้ก */
+    --brass:#c9974a;       /* สีทองเหลืองของเสา */
+    --cream:#f3e9dd;       /* สีตัวอักษร */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--plum);}
+  body{font-family:"IBM Plex Sans Thai",sans-serif;color:var(--cream);}
+
+  /* ผืนผ้าใบ 3 มิติ กินพื้นที่เต็มจอ */
+  #scene{position:fixed;inset:0;}
+  canvas{display:block;}
+
+  /* ป้ายชื่อผลงานมุมล่างซ้าย */
+  #plate{
+    position:fixed;left:32px;bottom:28px;max-width:min(380px,60vw);
+    pointer-events:none;
+  }
+  #plate h1{
+    font-family:"Fraunces",serif;font-weight:300;font-size:38px;
+    line-height:1.05;margin:0 0 6px;letter-spacing:-0.01em;
+  }
+  #plate .sub{font-size:13px;opacity:.72;line-height:1.6;margin:0;}
+  #plate .credit{font-size:11px;opacity:.45;margin-top:14px;line-height:1.5;}
+  #plate .credit a{color:inherit;}
+
+  /* คำใบ้วิธีเล่นมุมล่างขวา */
+  #hint{
+    position:fixed;right:32px;bottom:28px;font-size:12px;opacity:.55;
+    text-align:right;line-height:1.9;pointer-events:none;
+  }
+  #hint b{font-weight:500;opacity:.9;}
+
+  /* หน้าจอ "กำลังโหลด" */
+  #loader{
+    position:fixed;inset:0;display:grid;place-content:center;justify-items:center;
+    background:var(--plum);gap:18px;transition:opacity .6s ease;z-index:10;
+  }
+  #loader.done{opacity:0;pointer-events:none;}
+  #bar{width:200px;height:2px;background:rgba(243,233,221,.18);}
+  #bar span{display:block;height:100%;width:0;background:var(--lilac);transition:width .25s;}
+  #loader p{font-size:12px;opacity:.6;margin:0;letter-spacing:.04em;}
+
+  @media (max-width:640px){
+    #plate{left:20px;bottom:20px;}
+    #plate h1{font-size:27px;}
+    #hint{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+
+<div id="plate">
+  <h1>Berry Cake</h1>
+  <p class="sub">6721651190 จิรกร ชินการ</p>
+  <p class="credit">
+    This work is based on "Cake" by IbluebirdI (Sketchfab),
+    licensed under CC-BY-NC-4.0.
+  </p>
+</div>
+
+<div id="hint">
+  <b>ลากเมาส์</b> หมุนกล้อง · <b>สกรอลล์</b> ซูม<br>
+  <b>คลิกที่พื้น</b> ย้ายตำแหน่งไฟ · <b>แผงขวาบน</b> ปรับค่า
+</div>
+
+<div id="loader"><div id="bar"><span></span></div><p>กำลังโหลดโมเดล…</p></div>
+
+<!-- importmap = สมุดหน้าเหลือง บอกเบราว์เซอร์ว่าคำว่า "three" ให้ไปหยิบไฟล์จากที่ไหน -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+    "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/+esm"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import GUI from 'lil-gui';
+
+/* ---------------------------------------------------------------
+   1) ตัวฉาย (renderer) = เครื่องฉายหนัง คอยวาดภาพลงบนจอ
+--------------------------------------------------------------- */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;                       // เปิดระบบเงา
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;        // เงาขอบนุ่ม
+renderer.toneMapping = THREE.ACESFilmicToneMapping;      // ปรับแสงให้เหมือนกล้องถ่ายหนัง
+renderer.toneMappingExposure = 1.05;
+document.getElementById('scene').appendChild(renderer.domElement);
+
+/* 2) ฉาก (scene) = กล่องเปล่า ๆ ที่เราจะเอาของไปวาง */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#241329');
+scene.fog = new THREE.Fog('#241329', 12, 34);
+
+/* 3) กล้อง (camera) = ตาของคนดู */
+const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.1, 120);
+camera.position.set(4.2, 2.8, 5.6);
+
+/* 4) ตัวควบคุมกล้องด้วยเมาส์ = ลากแล้วหมุนรอบเค้กได้ */
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;          // หมุนแล้วไหลต่อนิด ๆ ให้ลื่นตา
+controls.target.set(0, 0.9, 0);
+controls.minDistance = 2.2;
+controls.maxDistance = 16;
+controls.maxPolarAngle = Math.PI * 0.495;   // กันไม่ให้กล้องมุดลงใต้พื้น
+
+/* ---------------------------------------------------------------
+   5) Environment = "ห้องแสงรอบตัว" ที่ผิวมันวาวเอาไว้สะท้อน
+      ถ้าไม่มีอันนี้ ของที่เป็นโลหะจะดำสนิทเหมือนถ่านทันที
+--------------------------------------------------------------- */
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.06).texture;
+scene.environmentIntensity = 0.55;
+
+/* ---------------------------------------------------------------
+   6) แสง
+--------------------------------------------------------------- */
+// แสงนวล ๆ ทั่วฉาก กันไม่ให้ด้านมืดดำสนิท
+scene.add(new THREE.HemisphereLight('#b79ad6', '#2a1a30', 0.5));
+
+// ★ ดวงไฟหลัก = ตัวที่โจทย์ให้ผู้ใช้ขยับได้ ★
+const keyLight = new THREE.PointLight('#fff2e0', 90, 0, 2);
+keyLight.position.set(3.2, 4.2, 2.6);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.bias = -0.0015;
+keyLight.shadow.radius = 3;
+scene.add(keyLight);
+
+// ลูกบอลเรืองแสงเล็ก ๆ ให้เห็นว่า "ตอนนี้ไฟอยู่ตรงไหน"
+const bulb = new THREE.Mesh(
+  new THREE.SphereGeometry(0.09, 24, 24),
+  new THREE.MeshBasicMaterial({ color:'#fff2e0' })
+);
+scene.add(bulb);
+
+// เส้นประจากไฟลงมาที่พื้น ช่วยให้กะตำแหน่งง่ายขึ้น
+const stem = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+  new THREE.LineBasicMaterial({ color:'#fff2e0', transparent:true, opacity:0.18 })
+);
+scene.add(stem);
+
+// ไฟเสริมจากด้านหลัง ทำให้ขอบเค้กมีเส้นสว่าง ไม่จมไปกับพื้นหลัง
+const rim = new THREE.DirectionalLight('#9fd8ff', 0.7);
+rim.position.set(-5, 3, -4);
+scene.add(rim);
+
+/* ---------------------------------------------------------------
+   7) พื้น + สิ่งปลูกสร้าง  (ทุกชิ้นใช้ MeshStandardMaterial = PBR Shader)
+      MeshStandardMaterial มีช่องใส่ค่าหลักครบ: color / metalness / roughness
+--------------------------------------------------------------- */
+
+// พื้นหินขัดมันวาว: ไม่ใช่โลหะ แต่ผิวเรียบมาก จึงสะท้อนเงาไฟได้
+const floorMat = new THREE.MeshStandardMaterial({
+  color:'#3a2440', metalness:0.0, roughness:0.22
+});
+const floor = new THREE.Mesh(new THREE.CircleGeometry(22, 96), floorMat);
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// แท่นวางเค้ก: หินอ่อนผิวด้านกว่าเล็กน้อย
+const podiumMat = new THREE.MeshStandardMaterial({
+  color:'#e8dcd0', metalness:0.0, roughness:0.45
+});
+const podium = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.5, 0.55, 64), podiumMat);
+podium.position.y = 0.275;
+podium.castShadow = podium.receiveShadow = true;
+scene.add(podium);
+
+// เส้นคาดทองเหลืองรอบแท่น: โลหะเต็มตัว ผิวเรียบ → ขึ้นเงาไฟชัด
+const brassMat = new THREE.MeshStandardMaterial({
+  color:'#c9974a', metalness:1.0, roughness:0.18
+});
+const trim = new THREE.Mesh(new THREE.TorusGeometry(1.37, 0.035, 16, 96), brassMat);
+trim.rotation.x = Math.PI/2;
+trim.position.y = 0.5;
+trim.castShadow = true;
+scene.add(trim);
+
+// เสา 6 ต้นล้อมรอบ = "สิ่งปลูกสร้าง" ตามที่โจทย์ขอ
+const pillarGeo = new THREE.CylinderGeometry(0.075, 0.075, 3.4, 24);
+const capGeo    = new THREE.SphereGeometry(0.13, 24, 24);
+for (let i = 0; i < 6; i++){
+  const a = (i / 6) * Math.PI * 2 + 0.4;
+  const g = new THREE.Group();
+  g.position.set(Math.cos(a) * 3.6, 0, Math.sin(a) * 3.6);
+
+  const p = new THREE.Mesh(pillarGeo, brassMat);
+  p.position.y = 1.7;
+  p.castShadow = p.receiveShadow = true;
+
+  const cap = new THREE.Mesh(capGeo, brassMat);
+  cap.position.y = 3.45;
+  cap.castShadow = true;
+
+  g.add(p, cap);
+  scene.add(g);
+}
+
+// ผนังโค้งด้านหลัง ช่วยรับแสงและเงา ทำให้ฉากดูมีมิติ
+const wallMat = new THREE.MeshStandardMaterial({
+  color:'#4a2f52', metalness:0.0, roughness:0.85, side:THREE.DoubleSide
+});
+const wall = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 9, 64, 1, true, 2.2, 3.4), wallMat);
+wall.position.y = 4.5;
+wall.receiveShadow = true;
+scene.add(wall);
+
+/* แถวลูกบอลสาธิต PBR: สีเดียวกันทั้งแถว ต่างกันแค่ค่า metalness/roughness
+   ทำให้เห็นชัดว่าสองค่านี้เปลี่ยนผิววัสดุยังไง */
+const demoBalls = [];
+for (let i = 0; i < 5; i++){
+  const m = new THREE.MeshStandardMaterial({
+    color:'#c9a8e3',
+    metalness: i / 4,          // ซ้าย 0 (พลาสติก) → ขวา 1 (โลหะ)
+    roughness: 1 - (i / 4) * 0.92   // ซ้ายผิวด้าน → ขวาผิวเงา
+  });
+  const b = new THREE.Mesh(new THREE.SphereGeometry(0.26, 48, 48), m);
+  b.position.set(-1.6 + i * 0.8, 0.26, 2.5);
+  b.castShadow = b.receiveShadow = true;
+  scene.add(b);
+  demoBalls.push(m);
+}
+
+/* ---------------------------------------------------------------
+   8) โหลดตัวละครหลัก (เค้ก) จากไฟล์ glTF
+--------------------------------------------------------------- */
+const cakeMats = [];          // เก็บวัสดุของเค้กไว้ให้ GUI ปรับ
+let cake = null;
+
+const barFill = document.querySelector('#bar span');
+const manager = new THREE.LoadingManager();
+manager.onProgress = (_u, done, total) => {
+  barFill.style.width = (done / total * 100) + '%';
+};
+
+/* รายชื่อไฟล์โมเดลที่ยอมรับได้ — เผื่อเบราว์เซอร์เติมวงเล็บต่อท้ายตอนดาวน์โหลด
+   โค้ดจะไล่ลองทีละชื่อจนกว่าจะเจอไฟล์ที่มีอยู่จริง */
+const MODEL_NAMES = [
+  'cake.glb',
+  'cake (1).glb', 'cake (2).glb', 'cake (3).glb', 'cake (4).glb', 'cake (5).glb',
+  'cake-1.glb', 'cake-2.glb',
+  'model/scene.gltf'
+];
+
+const loader = new GLTFLoader(manager);
+
+function tryLoad(i = 0){
+  if (i >= MODEL_NAMES.length){
+    document.querySelector('#loader p').textContent =
+      'หาไฟล์โมเดลไม่เจอ — ตรวจว่ามีไฟล์ .glb วางอยู่ข้าง ๆ index.html';
+    return;
+  }
+  loader.load(
+    encodeURI(MODEL_NAMES[i]),
+    onModelLoaded,
+    undefined,
+    () => tryLoad(i + 1)      // ชื่อนี้ไม่มี ลองชื่อถัดไป
+  );
+}
+
+function onModelLoaded(gltf){
+  cake = gltf.scene;
+
+  // วัดขนาดโมเดลจริง แล้วย่อ/ขยายให้พอดีแท่น (โมเดลจากเน็ตขนาดไม่แน่นอน)
+  const box  = new THREE.Box3().setFromObject(cake);
+  const size = box.getSize(new THREE.Vector3());
+  const s    = 2.3 / Math.max(size.x, size.y, size.z);
+  cake.scale.setScalar(s);
+
+  // จัดให้อยู่กลางแท่นพอดี
+  const box2   = new THREE.Box3().setFromObject(cake);
+  const center = box2.getCenter(new THREE.Vector3());
+  cake.position.x -= center.x;
+  cake.position.z -= center.z;
+  cake.position.y -= box2.min.y;
+  cake.position.y += 0.55;              // วางบนหน้าแท่น
+
+  cake.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = o.receiveShadow = true;
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    list.forEach((m) => { if (m && m.isMeshStandardMaterial) cakeMats.push(m); });
+  });
+
+  scene.add(cake);
+  document.getElementById('loader').classList.add('done');
+}
+
+tryLoad();
+
+/* ---------------------------------------------------------------
+   9) คลิกที่พื้นเพื่อย้ายไฟ (โต้ตอบด้วยเมาส์)
+--------------------------------------------------------------- */
+const ray = new THREE.Raycaster();
+const ptr = new THREE.Vector2();
+let downAt = null;
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  downAt = { x:e.clientX, y:e.clientY };
+});
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!downAt) return;
+  // ถ้าเมาส์ขยับเกิน 5 พิกเซล ถือว่าผู้ใช้กำลัง "ลากหมุนกล้อง" ไม่ใช่ "คลิกวางไฟ"
+  const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+  downAt = null;
+  if (moved > 5) return;
+
+  ptr.x =  (e.clientX / innerWidth)  * 2 - 1;
+  ptr.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+
+  const hit = ray.intersectObject(floor)[0];
+  if (!hit) return;
+  keyLight.position.x = THREE.MathUtils.clamp(hit.point.x, -9, 9);
+  keyLight.position.z = THREE.MathUtils.clamp(hit.point.z, -9, 9);
+  gui.controllersRecursive().forEach(c => c.updateDisplay());   // ให้ตัวเลขในแผงตามไปด้วย
+});
+
+/* ---------------------------------------------------------------
+   10) แผง GUI (มุมขวาบน)
+--------------------------------------------------------------- */
+const gui = new GUI({ title:'ปรับแต่งฉาก' });
+
+const fLight = gui.addFolder('แหล่งกำเนิดแสง');
+fLight.add(keyLight.position, 'x', -9, 9, 0.05).name('ตำแหน่ง X');
+fLight.add(keyLight.position, 'y',  0.4, 9, 0.05).name('ความสูง Y');
+fLight.add(keyLight.position, 'z', -9, 9, 0.05).name('ตำแหน่ง Z');
+fLight.add(keyLight, 'intensity', 0, 300, 1).name('ความสว่าง');
+fLight.addColor(keyLight, 'color').name('สีไฟ');
+fLight.add({ spin:true }, 'spin').name('ให้ไฟหมุนเอง').onChange(v => (autoSpin = v));
+
+const fCake = gui.addFolder('วัสดุตัวละคร (PBR)');
+fCake.add({ metalness:0 }, 'metalness', 0, 1, 0.01).name('Metallic')
+  .onChange(v => cakeMats.forEach(m => (m.metalness = v)));
+fCake.add({ roughness:0.3 }, 'roughness', 0, 1, 0.01).name('Roughness')
+  .onChange(v => cakeMats.forEach(m => (m.roughness = v)));
+fCake.add({ reset:() => location.reload() }, 'reset').name('คืนค่าเดิม');
+
+const fScene = gui.addFolder('ฉากรอบตัว');
+fScene.add(scene, 'environmentIntensity', 0, 2, 0.01).name('แสงสะท้อนรอบข้าง');
+fScene.add(floorMat, 'roughness', 0, 1, 0.01).name('ความด้านของพื้น');
+fScene.add(brassMat, 'metalness', 0, 1, 0.01).name('ความเป็นโลหะของเสา');
+fScene.close();
+
+/* ---------------------------------------------------------------
+   11) วนวาดภาพซ้ำ ๆ ประมาณ 60 ครั้งต่อวินาที
+--------------------------------------------------------------- */
+let autoSpin = true;
+const clock = new THREE.Clock();
+
+function tick(){
+  const t = clock.getElapsedTime();
+
+  if (autoSpin){
+    const r = Math.hypot(keyLight.position.x, keyLight.position.z) || 4;
+    keyLight.position.x = Math.cos(t * 0.35) * r;
+    keyLight.position.z = Math.sin(t * 0.35) * r;
+  }
+
+  bulb.position.copy(keyLight.position);
+  stem.geometry.setFromPoints([
+    keyLight.position.clone(),
+    new THREE.Vector3(keyLight.position.x, 0.01, keyLight.position.z)
+  ]);
+
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
