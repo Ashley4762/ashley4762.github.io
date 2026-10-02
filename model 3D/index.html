@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive 3D Portfolio</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;font-family:'Sarabun',sans-serif;background:#bfe3ff}
+  canvas{display:block}
+  #menu{position:fixed;left:14px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:12px;z-index:5}
+  .btn{width:92px;padding:8px 6px;border:3px solid #fff;border-radius:16px;background:#ffffffcc;cursor:pointer;
+       text-align:center;font-size:14px;box-shadow:0 4px 0 #0003;transition:.15s}
+  .btn:hover{transform:translateX(6px);background:#fff}
+  .btn.on{background:#ffd54f}
+  .btn img{width:64px;height:64px;object-fit:cover;border-radius:12px;display:block;margin:0 auto 4px;background:#ddd}
+  #panel{position:fixed;left:126px;top:50%;transform:translateY(-50%);width:300px;max-height:80vh;overflow:auto;
+         background:#fffffff0;border-radius:18px;padding:16px;display:none;z-index:5;box-shadow:0 6px 0 #0003}
+  #panel h2{margin:0 0 8px;font-size:20px}
+  #panel p{margin:4px 0;font-size:15px}
+  #panel iframe{width:100%;height:240px;border:2px solid #ccc;border-radius:10px;margin-top:8px}
+  #close{float:right;cursor:pointer;font-size:20px}
+  #cel{position:fixed;right:14px;top:14px;z-index:5;padding:8px 14px;border-radius:14px;border:3px solid #fff;
+       background:#ffffffcc;cursor:pointer;font-size:14px}
+  #hint{position:fixed;bottom:10px;width:100%;text-align:center;color:#234;font-size:13px;z-index:5;pointer-events:none}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="menu">
+  <div class="btn" data-k="me"><img src="face.jpg" onerror="this.style.visibility='hidden'">นิสิต</div>
+  <div class="btn" data-k="dept"><img src="dept.png" onerror="this.style.visibility='hidden'">แผนก</div>
+  <div class="btn" data-k="work"><img src="work.png" onerror="this.style.visibility='hidden'">ผลงาน</div>
+</div>
+<div id="panel"><span id="close">✕</span><div id="pc"></div></div>
+<button id="cel">Cel shading: เปิด</button>
+<div id="hint">ลากเมาส์หมุนฉาก • คลิกที่ป้าย / กระดานวาดรูป / ชื่อบนฐาน / รูปเหนือหลังคา</div>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+/* ====== แก้ข้อมูลตรงนี้ ====== */
+const MODEL_FILE = 'scene.glb';          // ชื่อไฟล์โมเดลที่ export จาก Blender
+const WORK_URL   = 'https://ashley4762.github.io/MyPaint/';
+// ชื่อ object ในไฟล์ scene.glb (ตัวพิมพ์เล็ก, Three.js ตัดจุดออก เช่น Cube.005 -> cube005)
+const PICK = {
+  work:  ['plane001'],                                  // กระดานวาดรูป -> ผลงาน
+  dept:  ['text002','object_2001','object_2002'],       // ป้ายไม้ + ตัวหนังสือแดง -> แผนก
+  me:    ['text','cube005'],                            // ชื่อ+รหัสบนฐาน + ฐานหญ้า -> นิสิต
+  photo: ['photoframe']                                 // รูปลอยเหนือหลังคา -> รูปตัวเอง
+};
+const INFO = {
+  me:   {title:'นิสิต', lines:['ชื่อ: จิรกร ชินการ (Jirakorn Chinkan)','รหัสนิสิต: 6721651190'], img:'face.jpg'},
+  dept: {title:'สาขา / มหาวิทยาลัย', lines:['มหาวิทยาลัย: เกษตรศาสตร์','สาขา: วิทยาการคอมพิวเตอร์','คณะ: (ใส่คณะ)']},
+  work: {title:'ผลงาน', lines:['โปรแกรม MyPaint ของฉัน'], iframe:WORK_URL},
+  photo:{title:'', lines:[], img:'face.jpg'}
+};
+/* ============================ */
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xcfe9ff, 40, 110);
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 400);
+camera.position.set(11, 8, 13);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0,2,0); controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI*0.49; controls.minDistance = 6; controls.maxDistance = 35;
+
+/* ---------- พื้นหลัง: ท้องฟ้าไล่สี ---------- */
+const sky = new THREE.Mesh(new THREE.SphereGeometry(200,32,16), new THREE.ShaderMaterial({
+  side:THREE.BackSide, depthWrite:false, fog:false,
+  uniforms:{top:{value:new THREE.Color(0x4aa8ff)}, bottom:{value:new THREE.Color(0xfff1c9)}},
+  vertexShader:`varying float h; void main(){h=normalize(position).y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+  fragmentShader:`uniform vec3 top; uniform vec3 bottom; varying float h;
+    void main(){ float t=smoothstep(0.0,0.6,h); gl_FragColor=vec4(mix(bottom,top,t),1.);}`
+}));
+scene.add(sky);
+
+/* ---------- Cel shading: gradient 3 ขั้น ---------- */
+const ramp = new THREE.DataTexture(new Uint8Array([90,90,90,255, 175,175,175,255, 255,255,255,255]),3,1,THREE.RGBAFormat);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter; ramp.needsUpdate = true;
+const toon = (color,map=null)=>new THREE.MeshToonMaterial({color,map,gradientMap:ramp});
+const outlineMat = new THREE.ShaderMaterial({
+  side:THREE.BackSide, uniforms:{t:{value:0.03}},
+  vertexShader:`uniform float t; void main(){ gl_Position=projectionMatrix*modelViewMatrix*vec4(position+normal*t,1.); }`,
+  fragmentShader:`void main(){ gl_FragColor=vec4(0.08,0.06,0.1,1.); }`
+});
+
+/* ---------- แสง ---------- */
+scene.add(new THREE.HemisphereLight(0xcfe9ff, 0x88aa66, 0.9));
+const sun = new THREE.DirectionalLight(0xfff0d0, 2.2);
+sun.position.set(10,16,8); sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-14,right:14,top:14,bottom:-14,near:1,far:50});
+scene.add(sun);
+
+/* ---------- ฉากรอบบ้าน: พื้นหญ้า ภูเขา เมฆ ---------- */
+const ground = new THREE.Mesh(new THREE.CircleGeometry(120,48), toon(0x8fd16a));
+ground.rotation.x = -Math.PI/2; ground.position.y = -0.6; ground.receiveShadow = true; scene.add(ground);
+
+const hillCols = [0x6fbf73,0x5aa862,0x7cc983];
+for(let i=0;i<14;i++){
+  const a = i/14*Math.PI*2 + Math.random()*0.3, r = 55+Math.random()*25;
+  const h = 10+Math.random()*16;
+  const hill = new THREE.Mesh(new THREE.ConeGeometry(9+Math.random()*7,h,6), toon(hillCols[i%3]));
+  hill.position.set(Math.cos(a)*r, h/2-0.6, Math.sin(a)*r); scene.add(hill);
+}
+const clouds = [];
+for(let i=0;i<10;i++){
+  const g = new THREE.Group();
+  for(let j=0;j<4;j++){
+    const s = new THREE.Mesh(new THREE.SphereGeometry(1.6+Math.random()*1.2,16,12), toon(0xffffff));
+    s.position.set(j*1.8-2.7, Math.random()*0.6, Math.random()*1.2); g.add(s);
+  }
+  g.position.set(Math.random()*120-60, 16+Math.random()*10, -25-Math.random()*40);
+  scene.add(g); clouds.push(g);
+}
+
+/* ---------- โหลดโมเดลบ้าน แล้วเปลี่ยนเป็น cel shading ---------- */
+const celMeshes = [];   // เก็บไว้สลับเปิด/ปิด
+const pickables = [];
+function toonify(root){
+  const list=[]; root.traverse(o=>{ if(o.isMesh) list.push(o); });
+  list.forEach(m=>{
+    const old = m.material;
+    if(m.name==='photoframe'||m.name==='Plane001'){          // รูป/กระดาน: โชว์สีจริง ไม่ทำ cel
+      if(m.name==='photoframe'){
+        const t = new THREE.TextureLoader().load('face.jpg'); t.flipY=false; t.colorSpace=THREE.SRGBColorSpace;
+        m.material = new THREE.MeshBasicMaterial({map:t, side:THREE.DoubleSide});
+      } else m.material = new THREE.MeshBasicMaterial({map:old.map, side:THREE.DoubleSide});
+      pickables.push(m); return;
+    }
+    const mat = toon(old.color?old.color.clone():0xffffff, old.map||null);
+    m.userData.orig = old; m.userData.toon = mat; m.material = mat;
+    m.castShadow = m.receiveShadow = true;
+    const ol = new THREE.Mesh(m.geometry, outlineMat); ol.userData.isOutline = true;
+    m.add(ol); celMeshes.push(m);
+    pickables.push(m);
+  });
+}
+function fitModel(obj){
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const s = 10/Math.max(size.x,size.z);          // ฉากไม่เกิน 10x10
+  obj.scale.setScalar(s);
+  box.setFromObject(obj);
+  const c = box.getCenter(new THREE.Vector3());
+  obj.position.set(-c.x, -box.min.y, -c.z);
+}
+function fallbackHouse(){   // ใช้ชั่วคราวถ้ายังไม่มี house.glb
+  const g = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(10,1,10), toon(0x4cbb3a)); base.position.y=0.5; g.add(base);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4,3,4), toon(0xd9c8a0)); body.position.y=2.5; g.add(body);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(3.6,2,4), toon(0xb03a3a)); roof.position.y=5; roof.rotation.y=Math.PI/4; g.add(roof);
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(2,1.4,0.1), toon(0xdddddd)); sign.name="sign"; sign.position.set(3.5,1.8,2); g.add(sign);
+  return g;
+}
+function addModel(obj){ toonify(obj); fitModel(obj); scene.add(obj); }
+new GLTFLoader().load(MODEL_FILE, g=>addModel(g.scene), undefined, ()=>addModel(fallbackHouse()));
+
+document.getElementById('cel').onclick = e=>{
+  const on = e.target.dataset.off==='1';
+  e.target.dataset.off = on?'0':'1';
+  e.target.textContent = 'Cel shading: '+(on?'เปิด':'ปิด');
+  celMeshes.forEach(m=>{
+    m.material = on ? m.userData.toon : m.userData.orig;
+    m.children.forEach(c=>{ if(c.userData.isOutline) c.visible = on; });
+  });
+};
+
+/* ---------- ปุ่มซ้ายมือ + กล้องบินไปหา ---------- */
+const views = {me:[0,4,14], dept:[-9,5,9], work:[9,4,6], photo:[0,9,12]};
+let goal = null;
+const panel = document.getElementById('panel'), pc = document.getElementById('pc');
+function openInfo(k){
+  const d = INFO[k];
+  pc.innerHTML = (d.title?`<h2>${d.title}</h2>`:'') + (d.img?`<img src="${d.img}" style="width:100%;border-radius:12px;margin-bottom:6px" onerror="this.remove()">`:'') + d.lines.map(l=>`<p>${l}</p>`).join('')
+               + (d.iframe?`<iframe src="${d.iframe}"></iframe><p><a href="${d.iframe}" target="_blank">เปิดในแท็บใหม่</a></p>`:'');
+  panel.style.display = 'block';
+  document.querySelectorAll('.btn').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
+  goal = new THREE.Vector3(...views[k]);
+}
+document.querySelectorAll('.btn').forEach(b=>b.onclick=()=>openInfo(b.dataset.k));
+document.getElementById('close').onclick = ()=>{ panel.style.display='none'; document.querySelectorAll('.btn').forEach(b=>b.classList.remove('on')); };
+
+/* ---------- 3D Picking: คลิกป้ายเพื่อเปิดผลงาน ---------- */
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let down = null; const DEBUG = location.search.includes('debug');
+renderer.domElement.addEventListener('pointerdown', e=>down=[e.clientX,e.clientY]);
+renderer.domElement.addEventListener('pointerup', e=>{
+  if(!down || Math.hypot(e.clientX-down[0], e.clientY-down[1])>5) return;   // ถ้าลากอยู่ ไม่นับว่าคลิก
+  mouse.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(pickables,false)[0];
+  if(!hit) return;
+  const names=[]; for(let o=hit.object;o;o=o.parent) names.push(o.name.toLowerCase());
+  if(DEBUG) console.log('คลิกโดน:', names.filter(Boolean).join(' < '));
+  for(const k of ['photo','work','dept','me']){            // เช็คตัวเฉพาะก่อน ตัวกว้าง (me) ทีหลัง
+    if(PICK[k].some(w=>names.some(n=>n===w))){ openInfo(k); return; }
+  }
+});
+
+/* ---------- วนลูปวาด ---------- */
+addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
+const clock = new THREE.Clock();
+(function loop(){
+  requestAnimationFrame(loop);
+  const t = clock.getElapsedTime();
+  clouds.forEach((c,i)=>{ c.position.x += 0.01+i*0.001; if(c.position.x>70) c.position.x=-70; });
+  if(goal){ camera.position.lerp(goal,0.05); if(camera.position.distanceTo(goal)<0.05) goal=null; }
+  controls.update();
+  renderer.render(scene,camera);
+})();
+</script>
+</body>
+</html>
