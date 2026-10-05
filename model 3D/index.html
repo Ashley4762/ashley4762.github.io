@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive 3D Portfolio</title>
+
+<style>
+  /* ===== พื้นฐานหน้าเว็บ ===== */
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Sarabun', sans-serif;
+    background: #bfe3ff;
+  }
+  canvas { display: block; }
+
+  /* ===== ปุ่มเมนูมุมซ้าย ===== */
+  #menu {
+    position: fixed;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 5;
+  }
+  .btn {
+    width: 92px;
+    padding: 8px 6px;
+    border: 3px solid #fff;
+    border-radius: 16px;
+    background: #ffffffcc;
+    box-shadow: 0 4px 0 #0003;
+    text-align: center;
+    font-size: 14px;
+    cursor: pointer;
+    transition: .15s;
+  }
+  .btn:hover { transform: translateX(6px); background: #fff; }
+  .btn.on    { background: #ffd54f; }          /* ปุ่มที่กำลังเลือกอยู่ */
+  .btn .ico  { font-size: 44px; height: 64px; line-height: 64px; }
+  .btn img {
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 4px;
+    border-radius: 12px;
+    object-fit: cover;
+    background: #ddd;
+  }
+
+  /* ===== กล่องแสดงข้อมูล ===== */
+  #panel {
+    display: none;
+    position: fixed;
+    left: 126px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 300px;
+    max-height: 80vh;
+    overflow: auto;
+    padding: 16px;
+    border-radius: 18px;
+    background: #fffffff0;
+    box-shadow: 0 6px 0 #0003;
+    z-index: 5;
+  }
+  #panel h2 { margin: 0 0 8px; font-size: 20px; }
+  #panel p  { margin: 4px 0; font-size: 15px; }
+  #panel iframe {
+    width: 100%;
+    height: 240px;
+    margin-top: 8px;
+    border: 2px solid #ccc;
+    border-radius: 10px;
+  }
+  #close { float: right; font-size: 20px; cursor: pointer; }
+
+  /* ===== ปุ่มสลับ cel shading + ข้อความแนะนำ ===== */
+  #cel {
+    position: fixed;
+    right: 14px;
+    top: 14px;
+    padding: 8px 14px;
+    border: 3px solid #fff;
+    border-radius: 14px;
+    background: #ffffffcc;
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 5;
+  }
+  #notice {
+    display: none;
+    position: fixed;
+    left: 14px;
+    bottom: 34px;
+    max-width: 420px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: #fff3cd;
+    color: #7a4b00;
+    font-size: 13px;
+    z-index: 9;
+  }
+  #hint {
+    position: fixed;
+    bottom: 10px;
+    width: 100%;
+    text-align: center;
+    color: #234;
+    font-size: 13px;
+    pointer-events: none;
+    z-index: 5;
+  }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+
+<body>
+
+<!-- เมนูมุมซ้าย -->
+<div id="menu">
+  <div class="btn" data-k="me">
+    <div class="ico" id="ico-me">🎓</div>
+    <img class="faceimg" style="display:none">
+    นิสิต
+  </div>
+  <div class="btn" data-k="dept"><div class="ico" id="ico-dept">🏫</div><img class="deptimg" style="display:none">แผนก</div>
+  <div class="btn" data-k="work"><div class="ico" id="ico-work">🎨</div><img class="workimg" style="display:none">ผลงาน</div>
+</div>
+
+<!-- กล่องข้อมูล -->
+<div id="panel">
+  <span id="close">✕</span>
+  <div id="panel-content"></div>
+</div>
+
+<div id="notice"></div>
+<button id="cel">Cel shading: เปิด</button>
+<div id="hint">ลากเมาส์หมุนฉาก • คลิกที่ป้าย / กระดานวาดรูป / ชื่อบนฐาน / รูปเหนือหลังคา</div>
+
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
+
+
+/* =====================================================================
+   1) ตั้งค่า (แก้ข้อมูลของตัวเองตรงนี้ที่เดียว)
+   ===================================================================== */
+
+const MODEL_FILE = 'scene.glb';                          // โมเดลที่ export จาก Blender
+const WORK_URL   = 'https://ashley4762.github.io/MyPaint/';
+// รูปตัวเอง / รูปแผนก: ลองไล่ตามลำดับ (ไฟล์ข้าง index.html ก่อน แล้วค่อยลองดึงตรงจาก GitHub)
+const RAW = 'https://raw.githubusercontent.com/Ashley4762/ashley4762.github.io/main/model%203D/';
+const FACE_FILES = ['face.png', 'face.jpg', RAW + 'face.png'];
+const DEPT_FILES = ['dept.png', 'dept.jpg', RAW + 'dept.png'];
+const DEBUG      = location.search.includes('debug');    // เปิดด้วย ?debug เพื่อดูชื่อ object ที่คลิก
+
+// ข้อความที่แสดงในกล่องข้อมูลของแต่ละปุ่ม / แต่ละจุดในฉาก
+const INFO = {
+  me:    { title: 'นิสิต',
+           lines: ['ชื่อ: จิรกร ชินการ (Jirakorn Chinkan)', 'รหัสนิสิต: 6721651190'],
+           showFace: true },
+  dept:  { title: 'สาขา / มหาวิทยาลัย',
+           lines: ['มหาวิทยาลัย: เกษตรศาสตร์', 'สาขา: วิทยาการคอมพิวเตอร์', 'คณะ: (ใส่คณะ)'],
+           showDept: true },
+  work:  { title: 'ผลงาน',
+           lines: ['โปรแกรม MyPaint ของฉัน'],
+           iframe: WORK_URL },
+  photo: { title: '', lines: [], showFace: true }
+};
+
+// ชื่อ object ใน scene.glb ที่คลิกแล้วเปิดข้อมูลแต่ละอัน
+// (ตัวพิมพ์เล็ก และ Three.js ตัดจุดออก เช่น Cube.005 -> cube005)
+const PICK = {
+  photo: ['photoframe'],                   // รูปลอยเหนือหลังคา
+  work:  ['plane001', 'object_2002'],      // กระดานวาดรูป + เสาของกระดาน
+  dept:  ['text002', 'object_2001'],       // ป้ายไม้ + ตัวหนังสือแดง
+  me:    ['text', 'cube005']               // ชื่อ+รหัสบนฐาน + ฐานหญ้า
+};
+const PICK_ORDER = ['photo', 'work', 'dept', 'me'];   // เช็คตัวเฉพาะก่อน ตัวกว้าง (me) ทีหลัง
+
+// มุมกล้องของแต่ละปุ่ม: pos = ตำแหน่งกล้อง, look = จุดที่มอง
+// (ฝั่งที่ชื่อ jirakorn หันออกไปคือแกน -z)
+const VIEWS = {
+  me:    { pos: [0, 3.2, -12],   look: [0, 2.2, -5] },
+  dept:  { pos: [3.5, 4.6, -11], look: [3.1, 3.8, -4.4] },
+  work:  { pos: [-4, 5, -11],    look: [-3.8, 4.3, -4.5] },
+  photo: { pos: [1.2, 7.6, -8],  look: [1.2, 7.0, -1.5] }
+};
+
+// ผ้าม่านโรงรถ (ตัวเลขชุดเดียวกับไฟล์ 1.html คือพิกัดในโมเดลเดิมก่อนย่อขนาด)
+const GARAGE_CURTAIN = { width: 3.0, height: 1.5, pos: [-10.0, 0.5, -1.5] };
+
+// ภาพ MyPaint สำรอง ฝังไว้ในไฟล์ (ใช้เมื่อกระดานใน scene.glb ไม่มีรูปติดมา)
+const PAINT_FALLBACK = 'data:image/png;base64,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kBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJFTV2NhYLm48VlOnTi1uAgAAOCEaGxuLm+iHmUEAAICEBnVmEAAAgJHBzCAAAEBCYhAAACAhMQgAAJCQGAQAAEhIDAIAACQkBgEAABISgwAAAAmJQQAAgITEIAAAQEJiEAAAICExCAAAkJAYBAAASEgMAgAAJCQGAQAAEhKDAAAACYlBAACAhMQgAABAQmIQAAAgITEIAACQkBgEAABISAwCAAAkJAYBAAASEoMAAAAJiUEAAICExCAAAEBC/x+193qiBjXlLgAAAABJRU5ErkJggg==';
+
+const SCENE_SIZE = 10;   // ย่อฉากให้ไม่เกิน 10x10 หน่วย ตามโจทย์
+
+
+/* =====================================================================
+   2) Renderer / Scene / Camera / Controls
+   ===================================================================== */
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xcfe9ff, 40, 110);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(7, 8, -16);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3.5, 0);
+controls.enableDamping = true;
+controls.minDistance = 6;
+controls.maxDistance = 35;
+controls.maxPolarAngle = Math.PI * 0.49;   // ไม่ให้กล้องลงใต้พื้น
+
+
+/* =====================================================================
+   3) วัสดุ: Cel shading + เส้นขอบ
+   ===================================================================== */
+
+// แถบสี 3 ขั้น (มืด / กลาง / สว่าง) เหมือนระบายสีการ์ตูน
+const toonRamp = new THREE.DataTexture(
+  new Uint8Array([90, 90, 90, 255,  175, 175, 175, 255,  255, 255, 255, 255]),
+  3, 1, THREE.RGBAFormat
+);
+toonRamp.minFilter = toonRamp.magFilter = THREE.NearestFilter;
+toonRamp.needsUpdate = true;
+
+const toon = (color, map = null) =>
+  new THREE.MeshToonMaterial({ color, map, gradientMap: toonRamp });
+
+// กล่องสถานะ (แสดงเมื่อเปิดด้วย ?debug) ใช้เช็คว่าอะไรโหลดได้/ไม่ได้
+const statusLines = { version: 'เวอร์ชันโค้ด: v7 (หน้าต่างเหลือง+ภาพกระดาน)' };
+const statusBox = document.createElement('div');
+statusBox.style.cssText = 'position:fixed;right:14px;top:60px;z-index:9;padding:8px 12px;border-radius:10px;' +
+  'background:#000a;color:#0fc;font:12px/1.6 monospace;white-space:pre;display:' + (DEBUG ? 'block' : 'none');
+document.body.appendChild(statusBox);
+function setStatus(key, text) {
+  statusLines[key] = text;
+  statusBox.textContent = Object.values(statusLines).join('\n');
+}
+setStatus('version', statusLines.version);
+
+// ข้อความเตือนสีเหลืองมุมซ้ายล่าง (แสดงเมื่อมีอะไรโหลดไม่ได้ ไม่ต้องเปิด ?debug)
+function showNotice(text) {
+  const box = document.getElementById('notice');
+  box.textContent = text;
+  box.style.display = 'block';
+}
+
+// เส้นขอบ: ก๊อปปี้โมเดลมาขยายออกตามแนวตั้งฉาก แล้วหันด้านในออก (Vertex Shader)
+const outlineMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: { t: { value: 0.03 } },          // ความหนาเส้นขอบ
+  vertexShader: `
+    uniform float t;
+    void main() {
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal * t, 1.0);
+    }`,
+  fragmentShader: `
+    void main() { gl_FragColor = vec4(0.08, 0.06, 0.1, 1.0); }`
+});
+
+// ผ้าม่านโรงรถ: Vertex Shader ขยับจุดยอดตามเวลา (realtime) — ลมพัด + จีบผ้า
+const curtainMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 }, uH: { value: GARAGE_CURTAIN.height } },
+  side: THREE.DoubleSide,
+  transparent: true,
+  vertexShader: `
+    uniform float uTime;
+    uniform float uH;
+    varying vec2  vUv;
+    varying float vPleat;
+    void main() {
+      vec3 pos = position;
+      float low = clamp((uH * 0.5 - pos.y) / uH, 0.0, 1.0);   // 0 = ราวด้านบน (ไม่ขยับ), 1 = ชายผ้าด้านล่าง (สะบัดสุด)
+
+      // จีบผ้า: คลื่นตามแนวตั้ง ขยับเอียงเบา ๆ ตามลม
+      float pleat = sin(pos.x * 20.0 + sin(uTime * 1.2 + pos.y * 2.0) * 0.4 * low);
+      float windPush = 0.12 * low;                              // ลมดันผ้าออกมาข้างหน้า
+      float wave = sin(pos.x * 4.0 + uTime * 3.5) * 0.06 * low; // คลื่นลมสะบัด
+
+      pos.z += pleat * 0.06 + windPush + wave;
+      vUv = uv;
+      vPleat = pleat;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }`,
+  fragmentShader: `
+    varying vec2  vUv;
+    varying float vPleat;
+    void main() {
+      // ร่องจีบมืด สันจีบสว่าง
+      float light = 0.55 + 0.45 * (vPleat * 0.5 + 0.5);
+      vec3 col = mix(vec3(0.80, 0.33, 0.08), vec3(1.0, 0.72, 0.30), light);
+      col *= mix(0.85, 1.0, vUv.y);                             // ชายผ้าด้านล่างเข้มขึ้นนิดหน่อย
+
+      // เนื้อผ้า: เส้นด้ายตาราง ๆ ละเอียด
+      col *= 0.95 + 0.05 * sin(vUv.x * 500.0) * sin(vUv.y * 300.0);
+
+      // ชายผ้าด้านล่างเป็นแถบเข้ม มีเส้นทองคาด
+      float hem = 1.0 - smoothstep(0.045, 0.06, vUv.y);
+      col = mix(col, vec3(0.55, 0.22, 0.05), hem);
+      float trim = smoothstep(0.062, 0.068, vUv.y) * (1.0 - smoothstep(0.072, 0.078, vUv.y));
+      col = mix(col, vec3(1.0, 0.85, 0.35), trim);
+
+      gl_FragColor = vec4(col, 0.93);
+    }`
+});
+
+
+/* =====================================================================
+   4) แสง
+   ===================================================================== */
+
+scene.add(new THREE.HemisphereLight(0xcfe9ff, 0x88aa66, 0.9));
+
+const sun = new THREE.DirectionalLight(0xfff0d0, 2.2);
+sun.position.set(10, 16, -8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;        // กันลายคลื่นประหลาดบนพื้นผิว
+sun.shadow.normalBias = 0.04;
+Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 50 });
+scene.add(sun);
+
+
+/* =====================================================================
+   5) พื้นหลัง: ท้องฟ้า พื้นหญ้า ภูเขา เมฆ
+   ===================================================================== */
+
+function createSky() {
+  const material = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      top:    { value: new THREE.Color(0x4aa8ff) },
+      bottom: { value: new THREE.Color(0xfff1c9) }
+    },
+    vertexShader: `
+      varying float h;
+      void main() {
+        h = normalize(position).y;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform vec3 top;
+      uniform vec3 bottom;
+      varying float h;
+      void main() {
+        float t = smoothstep(0.0, 0.6, h);
+        gl_FragColor = vec4(mix(bottom, top, t), 1.0);
+      }`
+  });
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(200, 32, 16), material));
+}
+
+function createGround() {
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(120, 48), toon(0x8fd16a));
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.6;
+  ground.receiveShadow = true;
+  scene.add(ground);
+}
+
+function createHills() {
+  const colors = [0x6fbf73, 0x5aa862, 0x7cc983];
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const angle  = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+    const radius = 55 + Math.random() * 25;
+    const height = 10 + Math.random() * 16;
+    const hill = new THREE.Mesh(
+      new THREE.ConeGeometry(9 + Math.random() * 7, height, 6),
+      toon(colors[i % 3])
+    );
+    hill.position.set(Math.cos(angle) * radius, height / 2 - 0.6, Math.sin(angle) * radius);
+    scene.add(hill);
+  }
+}
+
+function createClouds() {
+  const list = [];
+  for (let i = 0; i < 10; i++) {
+    const cloud = new THREE.Group();
+    for (let j = 0; j < 4; j++) {
+      const puff = new THREE.Mesh(
+        new THREE.SphereGeometry(1.6 + Math.random() * 1.2, 16, 12),
+        toon(0xffffff)
+      );
+      puff.position.set(j * 1.8 - 2.7, Math.random() * 0.6, Math.random() * 1.2);
+      cloud.add(puff);
+    }
+    cloud.position.set(Math.random() * 120 - 60, 16 + Math.random() * 10, -25 - Math.random() * 40);
+    scene.add(cloud);
+    list.push(cloud);
+  }
+  return list;
+}
+
+createSky();
+createGround();
+createHills();
+const clouds = createClouds();
+
+
+/* =====================================================================
+   6) รูปตัวเอง (โหลดจากไฟล์ เพราะรูปไม่ติดมากับ scene.glb)
+   ===================================================================== */
+
+let faceURL    = null;   // รูปที่ย่อแล้ว (ใช้ในปุ่มและกล่องข้อมูล)
+let deptURL    = null;   // รูปแผนกที่ย่อแล้ว
+let faceCanvas = null;   // รูปเดียวกัน ในรูปแบบ canvas (ใช้ทำ texture)
+let photoMat   = null;   // วัสดุของกรอบรูปเหนือหลังคา
+
+// ใส่รูปลงกรอบ: เรียกจากทั้งตอนรูปโหลดเสร็จ และตอนโมเดลโหลดเสร็จ
+// (ใครเสร็จทีหลังก็เป็นคนใส่ ป้องกันกรณีรูปมาก่อนโมเดลแล้วรูปไม่ขึ้น)
+function applyFaceToFrame() {
+  if (!photoMat || !faceCanvas) return;
+  const texture = new THREE.CanvasTexture(faceCanvas);
+  texture.flipY = false;                       // UV จาก Blender ใช้แบบ glTF
+  texture.colorSpace = THREE.SRGBColorSpace;
+  photoMat.map = texture;
+  photoMat.color.set(0xffffff);
+  photoMat.needsUpdate = true;
+  setStatus('photo', 'รูปบนกรอบ: ใส่แล้ว ✔');
+}
+
+// โหลดรูปจากรายชื่อไฟล์ (ลองทีละที่) → ตัดเป็นจัตุรัสตรงกลาง → ย่อเป็น size x size
+function loadSquareImage(files, size, onLoaded, onAllFailed, i = 0) {
+  if (i >= files.length) { onAllFailed(); return; }
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';               // ให้ดึงรูปจากเว็บอื่น (GitHub raw) มาใช้ได้
+  img.onload = () => {
+    const side = Math.min(img.width, img.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    canvas.getContext('2d').drawImage(
+      img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size
+    );
+    onLoaded(canvas, files[i]);
+  };
+  img.onerror = () => {
+    console.warn('โหลดรูปไม่ได้:', files[i]);
+    loadSquareImage(files, size, onLoaded, onAllFailed, i + 1);   // ลองที่ถัดไป
+  };
+  img.src = files[i];
+}
+
+// รูปตัวเอง → ปุ่ม "นิสิต", กล่องข้อมูล, กรอบรูปเหนือหลังคา
+loadSquareImage(FACE_FILES, 512,
+  (canvas, file) => {
+    faceCanvas = canvas;
+    faceURL = canvas.toDataURL('image/jpeg', 0.85);
+    setStatus('face', 'รูปตัวเอง: โหลดได้ ✔ (' + file + ')');
+    document.querySelectorAll('.faceimg').forEach(e => { e.src = faceURL; e.style.display = 'block'; });
+    document.getElementById('ico-me').style.display = 'none';
+    applyFaceToFrame();
+  },
+  () => {
+    setStatus('face', 'รูปตัวเอง: หาไม่เจอ ✘');
+    showNotice('⚠ หารูปตัวเองไม่เจอ: ต้องมีไฟล์ face.png (หรือ face.jpg) อยู่โฟลเดอร์เดียวกับ index.html');
+  }
+);
+
+// รูปแผนก → ปุ่ม "แผนก" และกล่องข้อมูล
+loadSquareImage(DEPT_FILES, 512,
+  (canvas, file) => {
+    deptURL = canvas.toDataURL('image/jpeg', 0.85);
+    setStatus('dept', 'รูปแผนก: โหลดได้ ✔ (' + file + ')');
+    document.querySelectorAll('.deptimg').forEach(e => { e.src = deptURL; e.style.display = 'block'; });
+    document.getElementById('ico-dept').style.display = 'none';
+  },
+  () => setStatus('dept', 'รูปแผนก: หาไม่เจอ (ใช้ไอคอน 🏫 แทน)')
+);
+
+
+/* =====================================================================
+   7) โมเดลบ้าน: แปลงเป็น cel shading, ย่อขนาด, แขวนผ้าม่านโรงรถ
+   ===================================================================== */
+
+const celMeshes = [];   // ชิ้นที่ทำ cel (เก็บไว้สลับเปิด/ปิด)
+const pickables = [];   // ชิ้นที่คลิกได้
+
+// ใช้ภาพบนกระดานวาดรูป (MyPaint) ทำรูปเล็กให้ปุ่ม "ผลงาน"
+function makeWorkThumbnail(map) {
+  const image = map && map.image;
+  if (!image) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const side = Math.min(image.width, image.height);
+  canvas.getContext('2d').drawImage(image, 0, 0, side, side, 0, 0, 128, 128);
+  document.querySelectorAll('.workimg').forEach(e => { e.src = canvas.toDataURL('image/png'); e.style.display = 'block'; });
+  document.getElementById('ico-work').style.display = 'none';
+}
+
+// ภาพบนกระดาน: ใช้รูปที่ติดมากับโมเดล ถ้าไม่มีให้ใช้ภาพสำรองที่ฝังไว้
+function getPaintMap(original) {
+  if (original.map) { makeWorkThumbnail(original.map); return original.map; }
+  const texture = new THREE.TextureLoader().load(PAINT_FALLBACK, makeWorkThumbnail);
+  texture.flipY = false;                        // UV จาก Blender ใช้แบบ glTF
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function toonify(root) {
+  const meshes = [];
+  root.traverse(o => { if (o.isMesh) meshes.push(o); });
+
+  meshes.forEach(mesh => {
+    const original = mesh.material;
+
+    // รูปตัวเอง และกระดานวาดรูป: โชว์สีจริง ไม่ทำ cel และไม่มีเส้นขอบ
+    if (mesh.name === 'photoframe') {
+      photoMat = new THREE.MeshBasicMaterial({ color: 0x999999, side: THREE.DoubleSide });  // รอรูปโหลด
+      mesh.material = photoMat;
+      pickables.push(mesh);
+      applyFaceToFrame();                     // ถ้ารูปโหลดเสร็จก่อนโมเดล ใส่ตรงนี้
+      return;
+    }
+    if (mesh.name === 'Plane001') {
+      const paintMap = getPaintMap(original);
+      mesh.material = new THREE.MeshBasicMaterial({ map: paintMap, side: THREE.DoubleSide });
+      pickables.push(mesh);
+      return;
+    }
+
+    // ชิ้นอื่น: เปลี่ยนเป็นวัสดุ toon + ใส่เส้นขอบ
+    // เก็บ "แสงเรืองในตัว" (emissive) จาก Blender ไว้ด้วย เช่น หน้าต่างสีเหลืองเรืองแสง ไฟรถ
+    const toonMat = new THREE.MeshToonMaterial({
+      color: original.color ? original.color.clone() : 0xffffff,
+      map: original.map || null,
+      gradientMap: toonRamp,
+      emissive: original.emissive ? original.emissive.clone() : 0x000000,
+      emissiveIntensity: original.emissiveIntensity ?? 1,
+      emissiveMap: original.emissiveMap || null
+    });
+    mesh.userData.original = original;
+    mesh.userData.toon = toonMat;
+    mesh.material = toonMat;
+    mesh.castShadow = mesh.receiveShadow = true;
+
+    const outline = new THREE.Mesh(mesh.geometry, outlineMat);
+    outline.userData.isOutline = true;
+    mesh.add(outline);
+
+    celMeshes.push(mesh);
+    pickables.push(mesh);
+  });
+}
+
+// ย่อให้ฉากไม่เกิน SCENE_SIZE x SCENE_SIZE, วางกึ่งกลาง, ให้ฐานแตะพื้น
+function fitModel(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  obj.scale.setScalar(SCENE_SIZE / Math.max(size.x, size.z));
+
+  box.setFromObject(obj);
+  const center = box.getCenter(new THREE.Vector3());
+  obj.position.set(-center.x, -box.min.y, -center.z);
+}
+
+// แขวนผ้าม่านหน้าหน้าต่างแต่ละบาน (ขนาดเท่าหน้าต่าง)
+// แขวนผ้าม่านที่ช่องโรงรถ พร้อมราวม่าน: ใส่เป็นลูกของโมเดล จึงย่อขนาด/ย้ายตามโมเดลอัตโนมัติ
+function addGarageCurtain(root) {
+  const { width, height, pos } = GARAGE_CURTAIN;
+
+  const curtain = new THREE.Mesh(new THREE.PlaneGeometry(width, height, 96, 24), curtainMat);
+  curtain.position.set(...pos);
+  root.add(curtain);
+
+  // ราวม่าน (แท่งไม้ + หัวกลมสองข้าง) อยู่ขอบบนของผ้า
+  const woodMat = new THREE.MeshToonMaterial({ color: 0x5a3a1a, gradientMap: toonRamp });
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, width + 0.3, 12), woodMat);
+  rod.rotation.z = Math.PI / 2;
+  rod.position.set(pos[0], pos[1] + height / 2 + 0.02, pos[2]);
+  root.add(rod);
+  [-1, 1].forEach(side => {
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 10), woodMat);
+    knob.position.set(pos[0] + side * (width / 2 + 0.15), pos[1] + height / 2 + 0.02, pos[2]);
+    root.add(knob);
+  });
+
+  setStatus('curtain', 'ผ้าม่านโรงรถ: แขวนแล้ว ✔');
+}
+
+// บ้านกล่องง่าย ๆ ใช้ชั่วคราวถ้าโหลด scene.glb ไม่ได้
+function createFallbackHouse() {
+  const group = new THREE.Group();
+  const add = (geometry, color, y, name = '') => {
+    const mesh = new THREE.Mesh(geometry, toon(color));
+    mesh.position.y = y;
+    mesh.name = name;
+    group.add(mesh);
+    return mesh;
+  };
+  add(new THREE.BoxGeometry(10, 1, 10), 0x4cbb3a, 0.5);
+  add(new THREE.BoxGeometry(4, 3, 4),   0xd9c8a0, 2.5);
+  add(new THREE.ConeGeometry(3.6, 2, 4), 0xb03a3a, 5).rotation.y = Math.PI / 4;
+  add(new THREE.BoxGeometry(2, 1.4, 0.1), 0xdddddd, 1.8, 'sign').position.set(3.5, 1.8, 2);
+  return group;
+}
+
+function addModel(obj) {
+  toonify(obj);
+  fitModel(obj);
+  scene.add(obj);
+  obj.updateMatrixWorld(true);
+  try { addGarageCurtain(obj); }
+  catch (err) { console.error(err); setStatus('curtain', 'ผ้าม่าน error: ' + err.message); }
+}
+
+new GLTFLoader().load(
+  MODEL_FILE,
+  gltf => { setStatus('model', 'โมเดล ' + MODEL_FILE + ': โหลดได้ ✔'); addModel(gltf.scene); },
+  undefined,
+  () => { setStatus('model', 'โมเดล ' + MODEL_FILE + ': โหลดไม่ได้ ✘ (ใช้บ้านสำรอง)'); addModel(createFallbackHouse()); }
+);
+
+// ปุ่มสลับ cel shading เปิด/ปิด
+const celButton = document.getElementById('cel');
+let celOn = true;
+celButton.onclick = () => {
+  celOn = !celOn;
+  celButton.textContent = 'Cel shading: ' + (celOn ? 'เปิด' : 'ปิด');
+  celMeshes.forEach(mesh => {
+    mesh.material = celOn ? mesh.userData.toon : mesh.userData.original;
+    mesh.children.forEach(child => { if (child.userData.isOutline) child.visible = celOn; });
+  });
+};
+
+
+/* =====================================================================
+   8) เมนูซ้ายมือ + กล่องข้อมูล + กล้องบินไปหา
+   ===================================================================== */
+
+const panel        = document.getElementById('panel');
+const panelContent = document.getElementById('panel-content');
+const buttons      = document.querySelectorAll('.btn');
+let cameraGoal = null;   // เป้าหมายกล้อง {pos, look} ถ้าไม่มี = ไม่ต้องบิน
+
+function buildPanelHTML(info) {
+  let html = '';
+  if (info.title) html += `<h2>${info.title}</h2>`;
+  if (info.showFace && faceURL) {
+    html += `<img src="${faceURL}" style="width:100%;border-radius:12px;margin-bottom:6px">`;
+  }
+  if (info.showDept && deptURL) {
+    html += `<img src="${deptURL}" style="width:100%;border-radius:12px;margin-bottom:6px">`;
+  }
+  html += info.lines.map(line => `<p>${line}</p>`).join('');
+  if (info.iframe) {
+    html += `<iframe src="${info.iframe}"></iframe>`
+          + `<p><a href="${info.iframe}" target="_blank">เปิดในแท็บใหม่</a></p>`;
+  }
+  return html;
+}
+
+function openInfo(key) {
+  panelContent.innerHTML = buildPanelHTML(INFO[key]);
+  panel.style.display = 'block';
+  buttons.forEach(b => b.classList.toggle('on', b.dataset.k === key));
+
+  cameraGoal = {
+    pos:  new THREE.Vector3(...VIEWS[key].pos),
+    look: new THREE.Vector3(...VIEWS[key].look)
+  };
+}
+
+buttons.forEach(b => { b.onclick = () => openInfo(b.dataset.k); });
+document.getElementById('close').onclick = () => {
+  panel.style.display = 'none';
+  buttons.forEach(b => b.classList.remove('on'));
+};
+
+
+/* =====================================================================
+   9) 3D Picking: คลิกวัตถุในฉากเพื่อเปิดข้อมูล
+   ===================================================================== */
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let pointerDownAt = null;
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  pointerDownAt = [e.clientX, e.clientY];
+});
+
+renderer.domElement.addEventListener('pointerup', e => {
+  // ถ้าเมาส์เลื่อนไปไกล แปลว่ากำลังลากหมุนฉาก ไม่นับว่าเป็นการคลิก
+  if (!pointerDownAt || Math.hypot(e.clientX - pointerDownAt[0], e.clientY - pointerDownAt[1]) > 5) return;
+
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(mouse, camera);
+
+  const hit = raycaster.intersectObjects(pickables, false)[0];
+  if (!hit) return;
+
+  // รวบรวมชื่อของชิ้นที่โดน และชื่อของ "พ่อแม่" ทั้งหมด
+  const names = [];
+  for (let o = hit.object; o; o = o.parent) names.push(o.name.toLowerCase());
+  if (DEBUG) console.log('คลิกโดน:', names.filter(Boolean).join(' < '));
+
+  const key = PICK_ORDER.find(k => PICK[k].some(word => names.includes(word)));
+  if (key) openInfo(key);
+});
+
+
+/* =====================================================================
+   10) วนลูปวาดภาพ
+   ===================================================================== */
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  curtainMat.uniforms.uTime.value = clock.getElapsedTime();     // ผ้าม่านพริ้ว
+
+  clouds.forEach((cloud, i) => {                                // เมฆลอย
+    cloud.position.x += 0.01 + i * 0.001;
+    if (cloud.position.x > 70) cloud.position.x = -70;
+  });
+
+  if (cameraGoal) {                                             // กล้องบินไปหาจุดที่กด
+    camera.position.lerp(cameraGoal.pos, 0.06);
+    controls.target.lerp(cameraGoal.look, 0.06);
+    if (camera.position.distanceTo(cameraGoal.pos) < 0.05) cameraGoal = null;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
