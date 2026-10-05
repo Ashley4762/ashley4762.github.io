@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interactive 3D Portfolio</title>
+
+<style>
+  /* ===== พื้นฐานหน้าเว็บ ===== */
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Sarabun', sans-serif;
+    background: #bfe3ff;
+  }
+  canvas { display: block; }
+
+  /* ===== ปุ่มเมนูมุมซ้าย ===== */
+  #menu {
+    position: fixed;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 5;
+  }
+  .btn {
+    width: 92px;
+    padding: 8px 6px;
+    border: 3px solid #fff;
+    border-radius: 16px;
+    background: #ffffffcc;
+    box-shadow: 0 4px 0 #0003;
+    text-align: center;
+    font-size: 14px;
+    cursor: pointer;
+    transition: .15s;
+  }
+  .btn:hover { transform: translateX(6px); background: #fff; }
+  .btn.on    { background: #ffd54f; }          /* ปุ่มที่กำลังเลือกอยู่ */
+  .btn .ico  { font-size: 44px; height: 64px; line-height: 64px; }
+  .btn img {
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 4px;
+    border-radius: 12px;
+    object-fit: cover;
+    background: #ddd;
+  }
+
+  /* ===== กล่องแสดงข้อมูล ===== */
+  #panel {
+    display: none;
+    position: fixed;
+    left: 126px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 300px;
+    max-height: 80vh;
+    overflow: auto;
+    padding: 16px;
+    border-radius: 18px;
+    background: #fffffff0;
+    box-shadow: 0 6px 0 #0003;
+    z-index: 5;
+  }
+  #panel h2 { margin: 0 0 8px; font-size: 20px; }
+  #panel p  { margin: 4px 0; font-size: 15px; }
+  #panel iframe {
+    width: 100%;
+    height: 240px;
+    margin-top: 8px;
+    border: 2px solid #ccc;
+    border-radius: 10px;
+  }
+  #close { float: right; font-size: 20px; cursor: pointer; }
+
+  /* ===== ปุ่มสลับ cel shading + ข้อความแนะนำ ===== */
+  #cel {
+    position: fixed;
+    right: 14px;
+    top: 14px;
+    padding: 8px 14px;
+    border: 3px solid #fff;
+    border-radius: 14px;
+    background: #ffffffcc;
+    font-size: 14px;
+    cursor: pointer;
+    z-index: 5;
+  }
+  #hint {
+    position: fixed;
+    bottom: 10px;
+    width: 100%;
+    text-align: center;
+    color: #234;
+    font-size: 13px;
+    pointer-events: none;
+    z-index: 5;
+  }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+
+<body>
+
+<!-- เมนูมุมซ้าย -->
+<div id="menu">
+  <div class="btn" data-k="me">
+    <div class="ico" id="ico-me">🎓</div>
+    <img class="faceimg" style="display:none">
+    นิสิต
+  </div>
+  <div class="btn" data-k="dept"><div class="ico">🏫</div>แผนก</div>
+  <div class="btn" data-k="work"><div class="ico">🎨</div>ผลงาน</div>
+</div>
+
+<!-- กล่องข้อมูล -->
+<div id="panel">
+  <span id="close">✕</span>
+  <div id="panel-content"></div>
+</div>
+
+<button id="cel">Cel shading: เปิด</button>
+<div id="hint">ลากเมาส์หมุนฉาก • คลิกที่ป้าย / กระดานวาดรูป / ชื่อบนฐาน / รูปเหนือหลังคา</div>
+
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
+
+
+/* =====================================================================
+   1) ตั้งค่า (แก้ข้อมูลของตัวเองตรงนี้ที่เดียว)
+   ===================================================================== */
+
+const MODEL_FILE = 'scene.glb';                          // โมเดลที่ export จาก Blender
+const WORK_URL   = 'https://ashley4762.github.io/MyPaint/';
+const FACE_FILES = ['IMG_20260924_211453_170.jpg', 'face.jpg'];   // รูปตัวเอง (ลองไล่ตามลำดับ)
+const DEBUG      = location.search.includes('debug');    // เปิดด้วย ?debug เพื่อดูชื่อ object ที่คลิก
+
+// ข้อความที่แสดงในกล่องข้อมูลของแต่ละปุ่ม / แต่ละจุดในฉาก
+const INFO = {
+  me:    { title: 'นิสิต',
+           lines: ['ชื่อ: จิรกร ชินการ (Jirakorn Chinkan)', 'รหัสนิสิต: 6721651190'],
+           showFace: true },
+  dept:  { title: 'สาขา / มหาวิทยาลัย',
+           lines: ['มหาวิทยาลัย: เกษตรศาสตร์', 'สาขา: วิทยาการคอมพิวเตอร์', 'คณะ: (ใส่คณะ)'] },
+  work:  { title: 'ผลงาน',
+           lines: ['โปรแกรม MyPaint ของฉัน'],
+           iframe: WORK_URL },
+  photo: { title: '', lines: [], showFace: true }
+};
+
+// ชื่อ object ใน scene.glb ที่คลิกแล้วเปิดข้อมูลแต่ละอัน
+// (ตัวพิมพ์เล็ก และ Three.js ตัดจุดออก เช่น Cube.005 -> cube005)
+const PICK = {
+  photo: ['photoframe'],                   // รูปลอยเหนือหลังคา
+  work:  ['plane001', 'object_2002'],      // กระดานวาดรูป + เสาของกระดาน
+  dept:  ['text002', 'object_2001'],       // ป้ายไม้ + ตัวหนังสือแดง
+  me:    ['text', 'cube005']               // ชื่อ+รหัสบนฐาน + ฐานหญ้า
+};
+const PICK_ORDER = ['photo', 'work', 'dept', 'me'];   // เช็คตัวเฉพาะก่อน ตัวกว้าง (me) ทีหลัง
+
+// มุมกล้องของแต่ละปุ่ม: pos = ตำแหน่งกล้อง, look = จุดที่มอง
+// (ฝั่งที่ชื่อ jirakorn หันออกไปคือแกน -z)
+const VIEWS = {
+  me:    { pos: [0, 3.2, -12],   look: [0, 2.2, -5] },
+  dept:  { pos: [3.5, 4.6, -11], look: [3.1, 3.8, -4.4] },
+  work:  { pos: [-4, 5, -11],    look: [-3.8, 4.3, -4.5] },
+  photo: { pos: [1.2, 7.6, -8],  look: [1.2, 7.0, -1.5] }
+};
+
+// ชื่อ object หน้าต่างบ้านที่จะแขวนผ้าม่าน
+const WINDOW_NAMES = ['Cube004', 'Cube007', 'Cube008', 'Cube009', 'Cube011', 'Cube012'];
+
+const SCENE_SIZE = 10;   // ย่อฉากให้ไม่เกิน 10x10 หน่วย ตามโจทย์
+
+
+/* =====================================================================
+   2) Renderer / Scene / Camera / Controls
+   ===================================================================== */
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xcfe9ff, 40, 110);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 400);
+camera.position.set(7, 8, -16);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 3.5, 0);
+controls.enableDamping = true;
+controls.minDistance = 6;
+controls.maxDistance = 35;
+controls.maxPolarAngle = Math.PI * 0.49;   // ไม่ให้กล้องลงใต้พื้น
+
+
+/* =====================================================================
+   3) วัสดุ: Cel shading + เส้นขอบ
+   ===================================================================== */
+
+// แถบสี 3 ขั้น (มืด / กลาง / สว่าง) เหมือนระบายสีการ์ตูน
+const toonRamp = new THREE.DataTexture(
+  new Uint8Array([90, 90, 90, 255,  175, 175, 175, 255,  255, 255, 255, 255]),
+  3, 1, THREE.RGBAFormat
+);
+toonRamp.minFilter = toonRamp.magFilter = THREE.NearestFilter;
+toonRamp.needsUpdate = true;
+
+const toon = (color, map = null) =>
+  new THREE.MeshToonMaterial({ color, map, gradientMap: toonRamp });
+
+// เส้นขอบ: ก๊อปปี้โมเดลมาขยายออกตามแนวตั้งฉาก แล้วหันด้านในออก (Vertex Shader)
+const outlineMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: { t: { value: 0.03 } },          // ความหนาเส้นขอบ
+  vertexShader: `
+    uniform float t;
+    void main() {
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal * t, 1.0);
+    }`,
+  fragmentShader: `
+    void main() { gl_FragColor = vec4(0.08, 0.06, 0.1, 1.0); }`
+});
+
+// ผ้าม่าน: Vertex Shader ขยับจุดยอดตามเวลา (realtime)
+const curtainMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: { value: 0 } },
+  side: THREE.DoubleSide,
+  transparent: true,
+  vertexShader: `
+    uniform float uTime;
+    varying float vFold;
+    void main() {
+      vec3 p = position;
+      float w = 1.0 - uv.y;                                          // บนติดราว (0) ล่างสะบัดสุด (1)
+      float fold = sin(p.x * 30.0) * 0.012;                          // ริ้วจีบผ้า
+      float wave = sin(p.x * 7.0 + p.y * 3.0 + uTime * 3.0) * 0.035 * w;  // คลื่นลมพัด
+      float push = 0.04 * w * (0.6 + 0.4 * sin(uTime * 1.3));       // ลมดันผ้าออกมา
+      p.z += fold * w + wave + push;
+      vFold = fold;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }`,
+  fragmentShader: `
+    varying float vFold;
+    void main() {                                                    // 2 โทนสีแบบ cel
+      vec3 col = mix(vec3(0.93, 0.50, 0.18), vec3(1.0, 0.78, 0.40), step(0.0, vFold));
+      gl_FragColor = vec4(col, 0.88);
+    }`
+});
+
+
+/* =====================================================================
+   4) แสง
+   ===================================================================== */
+
+scene.add(new THREE.HemisphereLight(0xcfe9ff, 0x88aa66, 0.9));
+
+const sun = new THREE.DirectionalLight(0xfff0d0, 2.2);
+sun.position.set(10, 16, -8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0005;        // กันลายคลื่นประหลาดบนพื้นผิว
+sun.shadow.normalBias = 0.04;
+Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 50 });
+scene.add(sun);
+
+
+/* =====================================================================
+   5) พื้นหลัง: ท้องฟ้า พื้นหญ้า ภูเขา เมฆ
+   ===================================================================== */
+
+function createSky() {
+  const material = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      top:    { value: new THREE.Color(0x4aa8ff) },
+      bottom: { value: new THREE.Color(0xfff1c9) }
+    },
+    vertexShader: `
+      varying float h;
+      void main() {
+        h = normalize(position).y;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform vec3 top;
+      uniform vec3 bottom;
+      varying float h;
+      void main() {
+        float t = smoothstep(0.0, 0.6, h);
+        gl_FragColor = vec4(mix(bottom, top, t), 1.0);
+      }`
+  });
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(200, 32, 16), material));
+}
+
+function createGround() {
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(120, 48), toon(0x8fd16a));
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.6;
+  ground.receiveShadow = true;
+  scene.add(ground);
+}
+
+function createHills() {
+  const colors = [0x6fbf73, 0x5aa862, 0x7cc983];
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const angle  = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+    const radius = 55 + Math.random() * 25;
+    const height = 10 + Math.random() * 16;
+    const hill = new THREE.Mesh(
+      new THREE.ConeGeometry(9 + Math.random() * 7, height, 6),
+      toon(colors[i % 3])
+    );
+    hill.position.set(Math.cos(angle) * radius, height / 2 - 0.6, Math.sin(angle) * radius);
+    scene.add(hill);
+  }
+}
+
+function createClouds() {
+  const list = [];
+  for (let i = 0; i < 10; i++) {
+    const cloud = new THREE.Group();
+    for (let j = 0; j < 4; j++) {
+      const puff = new THREE.Mesh(
+        new THREE.SphereGeometry(1.6 + Math.random() * 1.2, 16, 12),
+        toon(0xffffff)
+      );
+      puff.position.set(j * 1.8 - 2.7, Math.random() * 0.6, Math.random() * 1.2);
+      cloud.add(puff);
+    }
+    cloud.position.set(Math.random() * 120 - 60, 16 + Math.random() * 10, -25 - Math.random() * 40);
+    scene.add(cloud);
+    list.push(cloud);
+  }
+  return list;
+}
+
+createSky();
+createGround();
+createHills();
+const clouds = createClouds();
+
+
+/* =====================================================================
+   6) รูปตัวเอง (โหลดจากไฟล์ เพราะรูปไม่ติดมากับ scene.glb)
+   ===================================================================== */
+
+let faceURL  = null;   // รูปที่ย่อแล้ว (ใช้ในปุ่มและกล่องข้อมูล)
+let photoMat = null;   // วัสดุของกรอบรูปเหนือหลังคา
+
+function loadFace(i = 0) {
+  if (i >= FACE_FILES.length) return;
+
+  const img = new Image();
+  img.onload = () => {
+    // ตัดเป็นสี่เหลี่ยมจัตุรัสตรงกลาง (กรอบเป็นจัตุรัส รูปจะไม่ยืด) แล้วย่อเหลือ 512x512
+    const side = Math.min(img.width, img.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 512;
+    canvas.getContext('2d').drawImage(
+      img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 512, 512
+    );
+
+    faceURL = canvas.toDataURL('image/jpeg', 0.85);
+    document.querySelectorAll('.faceimg').forEach(e => { e.src = faceURL; e.style.display = 'block'; });
+    document.getElementById('ico-me').style.display = 'none';
+
+    if (photoMat) {
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.flipY = false;                       // UV จาก Blender ใช้แบบ glTF
+      texture.colorSpace = THREE.SRGBColorSpace;
+      photoMat.map = texture;
+      photoMat.color.set(0xffffff);
+      photoMat.needsUpdate = true;
+    }
+  };
+  img.onerror = () => {
+    console.warn('โหลดรูปไม่ได้:', FACE_FILES[i]);
+    loadFace(i + 1);                               // ลองชื่อไฟล์ถัดไป
+  };
+  img.src = FACE_FILES[i];
+}
+loadFace();
+
+
+/* =====================================================================
+   7) โมเดลบ้าน: แปลงเป็น cel shading, ย่อขนาด, แขวนผ้าม่าน
+   ===================================================================== */
+
+const celMeshes = [];   // ชิ้นที่ทำ cel (เก็บไว้สลับเปิด/ปิด)
+const pickables = [];   // ชิ้นที่คลิกได้
+
+function toonify(root) {
+  const meshes = [];
+  root.traverse(o => { if (o.isMesh) meshes.push(o); });
+
+  meshes.forEach(mesh => {
+    const original = mesh.material;
+
+    // รูปตัวเอง และกระดานวาดรูป: โชว์สีจริง ไม่ทำ cel และไม่มีเส้นขอบ
+    if (mesh.name === 'photoframe') {
+      photoMat = new THREE.MeshBasicMaterial({ color: 0x999999, side: THREE.DoubleSide });  // รอรูปโหลด
+      mesh.material = photoMat;
+      pickables.push(mesh);
+      return;
+    }
+    if (mesh.name === 'Plane001') {
+      mesh.material = new THREE.MeshBasicMaterial({ map: original.map, side: THREE.DoubleSide });
+      pickables.push(mesh);
+      return;
+    }
+
+    // ชิ้นอื่น: เปลี่ยนเป็นวัสดุ toon + ใส่เส้นขอบ
+    const toonMat = toon(original.color ? original.color.clone() : 0xffffff, original.map || null);
+    mesh.userData.original = original;
+    mesh.userData.toon = toonMat;
+    mesh.material = toonMat;
+    mesh.castShadow = mesh.receiveShadow = true;
+
+    const outline = new THREE.Mesh(mesh.geometry, outlineMat);
+    outline.userData.isOutline = true;
+    mesh.add(outline);
+
+    celMeshes.push(mesh);
+    pickables.push(mesh);
+  });
+}
+
+// ย่อให้ฉากไม่เกิน SCENE_SIZE x SCENE_SIZE, วางกึ่งกลาง, ให้ฐานแตะพื้น
+function fitModel(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  obj.scale.setScalar(SCENE_SIZE / Math.max(size.x, size.z));
+
+  box.setFromObject(obj);
+  const center = box.getCenter(new THREE.Vector3());
+  obj.position.set(-center.x, -box.min.y, -center.z);
+}
+
+// แขวนผ้าม่านหน้าหน้าต่างแต่ละบาน (ขนาดเท่าหน้าต่าง)
+function addCurtains(root) {
+  WINDOW_NAMES.forEach(name => {
+    const win = root.getObjectByName(name);
+    if (!win) return;
+
+    const box    = new THREE.Box3().setFromObject(win);
+    const size   = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const facesFront = size.x > size.z;            // หันไปทาง -z (ด้านหน้า) หรือ +x (ด้านข้าง)
+
+    const width  = (facesFront ? size.x : size.z) * 0.95;
+    const height = size.y * 0.95;
+    const curtain = new THREE.Mesh(new THREE.PlaneGeometry(width, height, 8, 16), curtainMat);
+
+    if (facesFront) {
+      curtain.position.set(center.x, center.y, box.min.z - 0.02);
+      curtain.rotation.y = Math.PI;
+    } else {
+      curtain.position.set(box.max.x + 0.02, center.y, center.z);
+      curtain.rotation.y = Math.PI / 2;
+    }
+    scene.add(curtain);
+  });
+}
+
+// บ้านกล่องง่าย ๆ ใช้ชั่วคราวถ้าโหลด scene.glb ไม่ได้
+function createFallbackHouse() {
+  const group = new THREE.Group();
+  const add = (geometry, color, y, name = '') => {
+    const mesh = new THREE.Mesh(geometry, toon(color));
+    mesh.position.y = y;
+    mesh.name = name;
+    group.add(mesh);
+    return mesh;
+  };
+  add(new THREE.BoxGeometry(10, 1, 10), 0x4cbb3a, 0.5);
+  add(new THREE.BoxGeometry(4, 3, 4),   0xd9c8a0, 2.5);
+  add(new THREE.ConeGeometry(3.6, 2, 4), 0xb03a3a, 5).rotation.y = Math.PI / 4;
+  add(new THREE.BoxGeometry(2, 1.4, 0.1), 0xdddddd, 1.8, 'sign').position.set(3.5, 1.8, 2);
+  return group;
+}
+
+function addModel(obj) {
+  toonify(obj);
+  fitModel(obj);
+  scene.add(obj);
+  obj.updateMatrixWorld(true);
+  addCurtains(obj);
+}
+
+new GLTFLoader().load(
+  MODEL_FILE,
+  gltf => addModel(gltf.scene),
+  undefined,
+  () => addModel(createFallbackHouse())
+);
+
+// ปุ่มสลับ cel shading เปิด/ปิด
+const celButton = document.getElementById('cel');
+let celOn = true;
+celButton.onclick = () => {
+  celOn = !celOn;
+  celButton.textContent = 'Cel shading: ' + (celOn ? 'เปิด' : 'ปิด');
+  celMeshes.forEach(mesh => {
+    mesh.material = celOn ? mesh.userData.toon : mesh.userData.original;
+    mesh.children.forEach(child => { if (child.userData.isOutline) child.visible = celOn; });
+  });
+};
+
+
+/* =====================================================================
+   8) เมนูซ้ายมือ + กล่องข้อมูล + กล้องบินไปหา
+   ===================================================================== */
+
+const panel        = document.getElementById('panel');
+const panelContent = document.getElementById('panel-content');
+const buttons      = document.querySelectorAll('.btn');
+let cameraGoal = null;   // เป้าหมายกล้อง {pos, look} ถ้าไม่มี = ไม่ต้องบิน
+
+function buildPanelHTML(info) {
+  let html = '';
+  if (info.title) html += `<h2>${info.title}</h2>`;
+  if (info.showFace && faceURL) {
+    html += `<img src="${faceURL}" style="width:100%;border-radius:12px;margin-bottom:6px">`;
+  }
+  html += info.lines.map(line => `<p>${line}</p>`).join('');
+  if (info.iframe) {
+    html += `<iframe src="${info.iframe}"></iframe>`
+          + `<p><a href="${info.iframe}" target="_blank">เปิดในแท็บใหม่</a></p>`;
+  }
+  return html;
+}
+
+function openInfo(key) {
+  panelContent.innerHTML = buildPanelHTML(INFO[key]);
+  panel.style.display = 'block';
+  buttons.forEach(b => b.classList.toggle('on', b.dataset.k === key));
+
+  cameraGoal = {
+    pos:  new THREE.Vector3(...VIEWS[key].pos),
+    look: new THREE.Vector3(...VIEWS[key].look)
+  };
+}
+
+buttons.forEach(b => { b.onclick = () => openInfo(b.dataset.k); });
+document.getElementById('close').onclick = () => {
+  panel.style.display = 'none';
+  buttons.forEach(b => b.classList.remove('on'));
+};
+
+
+/* =====================================================================
+   9) 3D Picking: คลิกวัตถุในฉากเพื่อเปิดข้อมูล
+   ===================================================================== */
+
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let pointerDownAt = null;
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  pointerDownAt = [e.clientX, e.clientY];
+});
+
+renderer.domElement.addEventListener('pointerup', e => {
+  // ถ้าเมาส์เลื่อนไปไกล แปลว่ากำลังลากหมุนฉาก ไม่นับว่าเป็นการคลิก
+  if (!pointerDownAt || Math.hypot(e.clientX - pointerDownAt[0], e.clientY - pointerDownAt[1]) > 5) return;
+
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(mouse, camera);
+
+  const hit = raycaster.intersectObjects(pickables, false)[0];
+  if (!hit) return;
+
+  // รวบรวมชื่อของชิ้นที่โดน และชื่อของ "พ่อแม่" ทั้งหมด
+  const names = [];
+  for (let o = hit.object; o; o = o.parent) names.push(o.name.toLowerCase());
+  if (DEBUG) console.log('คลิกโดน:', names.filter(Boolean).join(' < '));
+
+  const key = PICK_ORDER.find(k => PICK[k].some(word => names.includes(word)));
+  if (key) openInfo(key);
+});
+
+
+/* =====================================================================
+   10) วนลูปวาดภาพ
+   ===================================================================== */
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  curtainMat.uniforms.uTime.value = clock.getElapsedTime();     // ผ้าม่านพริ้ว
+
+  clouds.forEach((cloud, i) => {                                // เมฆลอย
+    cloud.position.x += 0.01 + i * 0.001;
+    if (cloud.position.x > 70) cloud.position.x = -70;
+  });
+
+  if (cameraGoal) {                                             // กล้องบินไปหาจุดที่กด
+    camera.position.lerp(cameraGoal.pos, 0.06);
+    controls.target.lerp(cameraGoal.look, 0.06);
+    if (camera.position.distanceTo(cameraGoal.pos) < 0.05) cameraGoal = null;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
